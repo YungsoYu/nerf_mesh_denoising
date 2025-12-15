@@ -1,0 +1,2 @@
+moved library folder under dependencies
+edit Makefile for the right path of library folder
