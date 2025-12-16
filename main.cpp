@@ -112,13 +112,18 @@ int main()
     unsigned int modelLoc = glGetUniformLocation(shaderProgram, "modelMatrix");
     unsigned int viewLoc = glGetUniformLocation(shaderProgram, "viewMatrix");
     unsigned int projLoc = glGetUniformLocation(shaderProgram, "projectionMatrix");
+    
+    // Lighting uniform locations
+    unsigned int lightPosLoc = glGetUniformLocation(shaderProgram, "lightPos");
+    unsigned int viewPosLoc = glGetUniformLocation(shaderProgram, "viewPos");
+    unsigned int objectColorLoc = glGetUniformLocation(shaderProgram, "objectColor");
 
     while (!glfwWindowShouldClose(window))
     {
         processInput(window);
 
         // Render
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
@@ -130,6 +135,13 @@ int main()
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(viewMatrix));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projectionMatrix));
+        
+        // Pass lighting uniforms
+        glm::vec3 lightPos(0.0f, 20.0f, 0.0f);
+        glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
+        glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
+        glm::vec3 objectColor(0.9f, 0.9f, 0.9f);  // Light gray
+        glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
         
         // Draw all loaded meshes
         for (const auto& mesh : meshes) {
