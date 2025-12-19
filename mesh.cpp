@@ -1,81 +1,80 @@
 #include "mesh.h"
-#include <fstream>
-#include <sstream>
-#include <glm/glm.hpp>
+#include <iostream>
 
-Mesh loadOBJ(const std::string& path) {
+#include <OpenMesh/Core/IO/MeshIO.hh>
+
+Mesh loadOBJ(const std::string& path)
+{
     Mesh mesh;
-    std::vector<float> tempVertices;
-    std::vector<unsigned int> indices;
-    
-    std::ifstream file(path);
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.substr(0, 2) == "v ") {
-            std::istringstream iss(line.substr(2));
-            float x, y, z;
-            iss >> x >> y >> z;
-            tempVertices.push_back(x);
-            tempVertices.push_back(y);
-            tempVertices.push_back(z);
-        } else if (line.substr(0, 2) == "f ") {
-            std::istringstream iss(line.substr(2));
-            std::string token;
-            while (iss >> token) {
-                size_t pos = token.find('/');
-                if (pos != std::string::npos) {
-                    token = token.substr(0, pos);
-                }
-                indices.push_back(std::stoi(token) - 1);
-            }
-        }
-    }
-    
-    // Build vertices with face normals (flat shading)
-    // Each vertex now has: position (3) + normal (3) = 6 floats
-    for (size_t i = 0; i < indices.size(); i += 3) {
-        // Get the three vertices of the triangle
-        unsigned int i0 = indices[i];
-        unsigned int i1 = indices[i + 1];
-        unsigned int i2 = indices[i + 2];
-        
-        glm::vec3 v0(tempVertices[i0 * 3], tempVertices[i0 * 3 + 1], tempVertices[i0 * 3 + 2]);
-        glm::vec3 v1(tempVertices[i1 * 3], tempVertices[i1 * 3 + 1], tempVertices[i1 * 3 + 2]);
-        glm::vec3 v2(tempVertices[i2 * 3], tempVertices[i2 * 3 + 1], tempVertices[i2 * 3 + 2]);
 
-        glm::vec3 edge1 = v1 - v0;
-        glm::vec3 edge2 = v2 - v0;
-        glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
-        
-        // Add all three vertices with the same face normal
-        mesh.vertices.push_back(v0.x); mesh.vertices.push_back(v0.y); mesh.vertices.push_back(v0.z);
-        mesh.vertices.push_back(normal.x); mesh.vertices.push_back(normal.y); mesh.vertices.push_back(normal.z);
-        
-        mesh.vertices.push_back(v1.x); mesh.vertices.push_back(v1.y); mesh.vertices.push_back(v1.z);
-        mesh.vertices.push_back(normal.x); mesh.vertices.push_back(normal.y); mesh.vertices.push_back(normal.z);
-        
-        mesh.vertices.push_back(v2.x); mesh.vertices.push_back(v2.y); mesh.vertices.push_back(v2.z);
-        mesh.vertices.push_back(normal.x); mesh.vertices.push_back(normal.y); mesh.vertices.push_back(normal.z);
+    if (!OpenMesh::IO::read_mesh(mesh.omesh, path)) {
+        std::cerr << "OpenMesh: failed to read mesh: " << path << std::endl;
     }
-    
-    mesh.vertexCount = mesh.vertices.size() / 6;  // 6 floats per vertex now
-    
-    glGenVertexArrays(1, &mesh.VAO);
-    glGenBuffers(1, &mesh.VBO);
-    glBindVertexArray(mesh.VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(float), mesh.vertices.data(), GL_STATIC_DRAW);
-    
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    
-    // Normal attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    
-    glBindVertexArray(0);
-    
+
     return mesh;
 }
 
+void prepareMeshForGL(Mesh& mesh, bool smoothNormals)
+{
+    // Request and compute normals
+    if (smoothNormals) {
+        mesh.omesh.request_vertex_normals();
+        mesh.omesh.request_face_normals();
+        mesh.omesh.update_normals();
+    } else {
+        mesh.omesh.request_face_normals();
+        mesh.omesh.update_face_normals();
+    }
+
+    // Convert OpenMesh to interleaved triangle data: position(3) + normal(3)
+    mesh.vertices.clear();
+    mesh.vertices.reserve(static_cast<size_t>(mesh.omesh.n_faces()) * 3u * 6u);
+
+    for (auto f_it = mesh.omesh.faces_begin(); f_it != mesh.omesh.faces_end(); ++f_it) {
+        auto fv_it = mesh.omesh.cfv_iter(*f_it);
+
+        OpenMesh::Vec3f p[3];
+        OpenMesh::Vec3f n[3];
+        int k = 0;
+        for (; fv_it.is_valid() && k < 3; ++fv_it, ++k) {
+            auto vh = *fv_it;
+            p[k] = mesh.omesh.point(vh);
+            if (smoothNormals && mesh.omesh.has_vertex_normals()) {
+                n[k] = mesh.omesh.normal(vh);
+            }
+        }
+        if (k != 3) continue;
+
+        OpenMesh::Vec3f faceN = OpenMesh::cross(p[1] - p[0], p[2] - p[0]);
+        if (faceN.norm() > 0.0f) faceN.normalize();
+
+        for (int i = 0; i < 3; ++i) {
+            OpenMesh::Vec3f nn = smoothNormals ? n[i] : faceN;
+            mesh.vertices.push_back(p[i][0]); mesh.vertices.push_back(p[i][1]); mesh.vertices.push_back(p[i][2]);
+            mesh.vertices.push_back(nn[0]);   mesh.vertices.push_back(nn[1]);   mesh.vertices.push_back(nn[2]);
+        }
+    }
+
+    mesh.vertexCount = static_cast<int>(mesh.vertices.size() / 6);
+
+    // Upload to GPU
+    if (mesh.VAO == 0) glGenVertexArrays(1, &mesh.VAO);
+    if (mesh.VBO == 0) glGenBuffers(1, &mesh.VBO);
+
+    glBindVertexArray(mesh.VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 mesh.vertices.size() * sizeof(float),
+                 mesh.vertices.data(),
+                 GL_STATIC_DRAW);
+
+    // Position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Normal attribute
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindVertexArray(0);
+}

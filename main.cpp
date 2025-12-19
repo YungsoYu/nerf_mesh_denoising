@@ -107,6 +107,11 @@ int main()
     }
     closedir(dir);
 
+    // Convert OpenMesh to OpenGL VBO before drawing
+    for (auto& mesh : meshes) {
+        prepareMeshForGL(mesh, false); // false = flat shading
+    }
+
     // Matrices and uniform locations
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     unsigned int modelLoc = glGetUniformLocation(shaderProgram, "modelMatrix");

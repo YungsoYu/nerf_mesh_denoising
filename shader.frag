@@ -7,9 +7,15 @@ in vec3 Normal;
 uniform vec3 lightPos;
 uniform vec3 viewPos;
 uniform vec3 objectColor;
+uniform bool wireframeMode;
 
 void main()
 {
+    if (wireframeMode) {
+        FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    
     // Ambient
     float ambientStrength = 0.1;
     vec3 ambient = ambientStrength * vec3(1.0);
