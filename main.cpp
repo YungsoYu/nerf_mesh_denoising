@@ -107,9 +107,9 @@ int main()
     }
     closedir(dir);
 
-    // Convert OpenMesh to OpenGL VBO before drawing
+    // Prepare OpenGL VBO for each mesh
     for (auto& mesh : meshes) {
-        prepareMeshForGL(mesh, false); // false = flat shading
+        prepareMeshForGL(mesh);
     }
 
     // Matrices and uniform locations
@@ -128,7 +128,7 @@ int main()
         processInput(window);
 
         // Render
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
@@ -145,9 +145,11 @@ int main()
         glm::vec3 lightPos(0.0f, 20.0f, 0.0f);
         glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
-        glm::vec3 objectColor(0.9f, 0.9f, 0.9f);  // Light gray
-        glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
         
+        // Object color
+        float objectColor[3] = {0.9f, 0.9f, 0.9f};
+        glUniform3fv(objectColorLoc, 1, objectColor);
+
         // Draw all loaded meshes
         for (const auto& mesh : meshes) {
             glBindVertexArray(mesh.VAO);
@@ -192,7 +194,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     if (!dragging)
     {
         dragging = true;
-        firstMouse = true; // reset so first movement doesn't jump
+        firstMouse = true; 
     }
 
     if (firstMouse)
@@ -219,7 +221,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     if(pitch < -89.0f)
         pitch = -89.0f;
 
-    // Orbit: convert yaw/pitch to spherical coordinates around origin
+    // Orbit
     cameraPos.x = orbitRadius * cos(glm::radians(yaw)) * cos(glm::radians(pitch));
     cameraPos.y = orbitRadius * sin(glm::radians(pitch));
     cameraPos.z = orbitRadius * sin(glm::radians(yaw)) * cos(glm::radians(pitch));
