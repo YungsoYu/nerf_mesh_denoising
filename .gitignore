@@ -1,5 +1,3 @@
 build/
 dependencies/
 Makefile
-ui.cpp
-ui.h

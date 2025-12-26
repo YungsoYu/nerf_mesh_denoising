@@ -12,6 +12,7 @@
 
 #include "mesh.h"
 #include "shader.h"
+#include "ui.h"
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -73,6 +74,10 @@ int main()
 
     glEnable(GL_DEPTH_TEST);
 
+    // Initialize UI
+    initUI(window);
+    UIState uiState;
+
     // Shader
     std::string vertexShaderSource = loadShaderFile("shader.vert");
     std::string fragmentShaderSource = loadShaderFile("shader.frag");
@@ -95,6 +100,7 @@ int main()
 
     // Load all OBJ files from meshDir directory
     std::vector<Mesh> meshes;
+    std::vector<Mesh> originalMeshes;  // Store originals for reset
     std::string meshDir = "mesh/hotdog/";
     
     DIR* dir = opendir(meshDir.c_str());
@@ -107,9 +113,12 @@ int main()
     }
     closedir(dir);
 
-    // Prepare OpenGL VBO for each mesh
+    // Store original meshes for reset functionality
+    originalMeshes = meshes;
+
+    // Prepare OpenGL VBO for each mesh (with initial selection highlighted)
     for (auto& mesh : meshes) {
-        prepareMeshForGL(mesh);
+        prepareMeshForGL(mesh, uiState.boundarySelection);
     }
 
     // Matrices and uniform locations
@@ -122,10 +131,37 @@ int main()
     unsigned int lightPosLoc = glGetUniformLocation(shaderProgram, "lightPos");
     unsigned int viewPosLoc = glGetUniformLocation(shaderProgram, "viewPos");
     unsigned int objectColorLoc = glGetUniformLocation(shaderProgram, "objectColor");
+    unsigned int boundaryColorLoc = glGetUniformLocation(shaderProgram, "boundaryColor");
 
     while (!glfwWindowShouldClose(window))
     {
         processInput(window);
+
+        // Handle UI button clicks
+        if (uiState.removeClicked) {
+            uiState.removeClicked = false;
+            for (auto& mesh : meshes) {
+                removeBoundaryFaces(mesh, uiState.boundarySelection);
+                prepareMeshForGL(mesh, uiState.boundarySelection);
+            }
+        }
+        
+        // Rebuild VBO with new highlighting when selection changes
+        if (uiState.selectionChanged) {
+            uiState.selectionChanged = false;
+            for (auto& mesh : meshes) {
+                prepareMeshForGL(mesh, uiState.boundarySelection);
+            }
+        }
+        
+        if (uiState.resetClicked) {
+            uiState.resetClicked = false;
+            meshes = originalMeshes;
+            for (auto& mesh : meshes) {
+                // not completed
+                prepareMeshForGL(mesh, uiState.boundarySelection);
+            }
+        }
 
         // Render
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -146,9 +182,27 @@ int main()
         glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
         
-        // Object color
+        // Object color and boundary highlight color
         float objectColor[3] = {0.9f, 0.9f, 0.9f};
+        float boundaryColor[3];
+        if (uiState.boundarySelection == 0) {
+            // Yellow for 1 boundary edge
+            boundaryColor[0] = 1.0f;
+            boundaryColor[1] = 0.9f;
+            boundaryColor[2] = 0.2f;
+        } else if (uiState.boundarySelection == 1) {
+            // Red for 2 boundary edges
+            boundaryColor[0] = 1.0f;
+            boundaryColor[1] = 0.3f;
+            boundaryColor[2] = 0.3f;
+        } else {
+            // Orange for 3 boundary edges
+            boundaryColor[0] = 1.0f;
+            boundaryColor[1] = 0.5f;
+            boundaryColor[2] = 0.0f;
+        }
         glUniform3fv(objectColorLoc, 1, objectColor);
+        glUniform3fv(boundaryColorLoc, 1, boundaryColor);
 
         // Draw all loaded meshes
         for (const auto& mesh : meshes) {
@@ -156,11 +210,15 @@ int main()
             glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
         }
 
+        // Render UI
+        renderUI(uiState);
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     // Cleanup
+    shutdownUI();
     for (auto& mesh : meshes) {
         glDeleteVertexArrays(1, &mesh.VAO);
         glDeleteBuffers(1, &mesh.VBO);
