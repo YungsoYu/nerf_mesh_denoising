@@ -160,14 +160,22 @@ void Mesh::findBoundaryFaces() {
     int numTriangles = indices_.size() / 3;
     for (int faceIdx = 0; faceIdx < numTriangles; faceIdx++) {
         int numBoundaryEdges = 0;
+        bool isThereNonManifoldEdge = false;
         for (int i = 0; i < 3; i++) {
             int v0 = indices_[faceIdx * 3 + i];
             int v1 = indices_[faceIdx * 3 + (i + 1) % 3];
             if (edgeToFaces_.at(makeEdge(v0, v1)).size() == 1) {
                 numBoundaryEdges++;
             }
+            if (edgeToFaces_.at(makeEdge(v0, v1)).size() > 2) {
+                isThereNonManifoldEdge = true;
+            }
         }
-        if (numBoundaryEdges >= 1 && numBoundaryEdges <= 3) {
+        // boundary edge 1
+        if (numBoundaryEdges > 0 && numBoundaryEdges < 3 && isThereNonManifoldEdge) {
+            boundaryFaces_[numBoundaryEdges - 1].push_back(faceIdx);
+        }
+        if (numBoundaryEdges == 3) {
             boundaryFaces_[numBoundaryEdges - 1].push_back(faceIdx);
         }
     }
