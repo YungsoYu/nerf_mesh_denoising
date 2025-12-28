@@ -11,6 +11,7 @@
 #include <dirent.h>
 
 #include "mesh.h"
+#include "mesh_renderer.h"
 #include "shader.h"
 #include "ui.h"
 
@@ -58,14 +59,12 @@ int main()
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
-
     // Register mouse callbacks
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glfwSetCursorPosCallback(window, mouse_callback); 
     glfwSetScrollCallback(window, scroll_callback); 
 
     // glad: load all OpenGL function pointers
-    // ---------------------------------------
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         std::cout << "Failed to initialize GLAD" << std::endl;
@@ -101,6 +100,7 @@ int main()
     // Load all OBJ files from meshDir directory
     std::vector<Mesh> meshes;
     std::vector<Mesh> originalMeshes;  // Store originals for reset
+    std::vector<MeshRenderer> renderers;
     std::string meshDir = "mesh/hotdog/";
     
     DIR* dir = opendir(meshDir.c_str());
@@ -108,7 +108,8 @@ int main()
     while ((entry = readdir(dir)) != nullptr) {
         std::string filename = entry->d_name;
         if (filename.length() > 4 && filename.substr(filename.length() - 4) == ".obj") {
-            meshes.push_back(loadOBJ(meshDir + filename));
+            meshes.push_back(Mesh::fromOBJ(meshDir + filename));
+            renderers.emplace_back();
         }
     }
     closedir(dir);
@@ -116,9 +117,9 @@ int main()
     // Store original meshes for reset functionality
     originalMeshes = meshes;
 
-    // Prepare OpenGL VBO for each mesh (with initial selection highlighted)
-    for (auto& mesh : meshes) {
-        prepareMeshForGL(mesh, uiState.boundarySelection);
+    // Initial upload to GPU
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        renderers[i].upload(meshes[i], uiState.boundarySelection);
     }
 
     // Matrices and uniform locations
@@ -137,29 +138,29 @@ int main()
     {
         processInput(window);
 
-        // Handle UI button clicks
+        // Handle remove button click
         if (uiState.removeClicked) {
             uiState.removeClicked = false;
-            for (auto& mesh : meshes) {
-                removeBoundaryFaces(mesh, uiState.boundarySelection);
-                prepareMeshForGL(mesh, uiState.boundarySelection);
+            for (size_t i = 0; i < meshes.size(); ++i) {
+                meshes[i].removeBoundaryFaces(uiState.boundarySelection);
+                renderers[i].upload(meshes[i], uiState.boundarySelection);
             }
         }
         
-        // Rebuild VBO with new highlighting when selection changes
+        // Handle selection change
         if (uiState.selectionChanged) {
             uiState.selectionChanged = false;
-            for (auto& mesh : meshes) {
-                prepareMeshForGL(mesh, uiState.boundarySelection);
+            for (size_t i = 0; i < meshes.size(); ++i) {
+                renderers[i].upload(meshes[i], uiState.boundarySelection);
             }
         }
         
+        // Handle reset button click
         if (uiState.resetClicked) {
             uiState.resetClicked = false;
             meshes = originalMeshes;
-            for (auto& mesh : meshes) {
-                // not completed
-                prepareMeshForGL(mesh, uiState.boundarySelection);
+            for (size_t i = 0; i < meshes.size(); ++i) {
+                renderers[i].upload(meshes[i], uiState.boundarySelection);
             }
         }
 
@@ -183,31 +184,25 @@ int main()
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
         
         // Object color and boundary highlight color
-        float objectColor[3] = {0.9f, 0.9f, 0.9f};
-        float boundaryColor[3];
-        if (uiState.boundarySelection == 0) {
-            // Yellow for 1 boundary edge
-            boundaryColor[0] = 1.0f;
-            boundaryColor[1] = 0.9f;
-            boundaryColor[2] = 0.2f;
-        } else if (uiState.boundarySelection == 1) {
-            // Red for 2 boundary edges
-            boundaryColor[0] = 1.0f;
-            boundaryColor[1] = 0.3f;
-            boundaryColor[2] = 0.3f;
-        } else {
-            // Orange for 3 boundary edges
-            boundaryColor[0] = 1.0f;
-            boundaryColor[1] = 0.5f;
-            boundaryColor[2] = 0.0f;
+        glm::vec3 objectColor(0.9f, 0.9f, 0.9f);
+        glm::vec3 boundaryColor;
+        switch (uiState.boundarySelection) {
+            case 0:  // Yellow for 1 boundary edge
+                boundaryColor = glm::vec3(1.0f, 0.9f, 0.2f);
+                break;
+            case 1:  // Red for 2 boundary edges
+                boundaryColor = glm::vec3(1.0f, 0.3f, 0.3f);
+                break;
+            default: // Orange for 3 boundary edges
+                boundaryColor = glm::vec3(1.0f, 0.5f, 0.0f);
+                break;
         }
-        glUniform3fv(objectColorLoc, 1, objectColor);
-        glUniform3fv(boundaryColorLoc, 1, boundaryColor);
+        glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
+        glUniform3fv(boundaryColorLoc, 1, glm::value_ptr(boundaryColor));
 
-        // Draw all loaded meshes
-        for (const auto& mesh : meshes) {
-            glBindVertexArray(mesh.VAO);
-            glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
+        // Draw all meshes
+        for (const auto& renderer : renderers) {
+            renderer.draw();
         }
 
         // Render UI
@@ -219,10 +214,7 @@ int main()
 
     // Cleanup
     shutdownUI();
-    for (auto& mesh : meshes) {
-        glDeleteVertexArrays(1, &mesh.VAO);
-        glDeleteBuffers(1, &mesh.VBO);
-    }
+    renderers.clear();  // MeshRenderer destructor handles VAO/VBO cleanup
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
