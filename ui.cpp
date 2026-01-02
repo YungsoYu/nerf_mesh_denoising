@@ -25,18 +25,23 @@ void renderUI(UIState& state)
 
     // Create UI panel
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(220, 160), ImGuiCond_Always);
-    ImGui::Begin("Boundary Face Removal", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::SetNextWindowSize(ImVec2(220, 180), ImGuiCond_Always);
+    ImGui::Begin("Mesh Analysis", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
-    // Radio buttons for boundary selection
-    ImGui::Text("Select faces to remove:");
-    if (ImGui::RadioButton("1 Boundary Edge", &state.boundarySelection, 0)) {
+    // Transparent face checkbox
+    ImGui::Checkbox("Transparent Face", &state.transparentFace);
+    
+    ImGui::Spacing();
+    
+    // Checkboxes for boundary selection
+    ImGui::Text("Select faces to highlight:");
+    if (ImGui::Checkbox("1 Boundary Edge", &state.boundarySelection[0])) {
         state.selectionChanged = true;
     }
-    if (ImGui::RadioButton("2 Boundary Edges", &state.boundarySelection, 1)) {
+    if (ImGui::Checkbox("2 Boundary Edges", &state.boundarySelection[1])) {
         state.selectionChanged = true;
     }
-    if (ImGui::RadioButton("3 Boundary Edges", &state.boundarySelection, 2)) {
+    if (ImGui::Checkbox("3 Boundary Edges", &state.boundarySelection[2])) {
         state.selectionChanged = true;
     }
     

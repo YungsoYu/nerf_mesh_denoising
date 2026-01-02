@@ -4,10 +4,13 @@
 #include <GLFW/glfw3.h>
 
 struct UIState {
-    // Boundary face removal: 0 = 1 edge, 1 = 2 edges
-    int boundarySelection = 0;
+    // Boundary face selection: [0] = 1 edge, [1] = 2 edges, [2] = 3 edges
+    bool boundarySelection[3] = {false, false, false};
     
-    // Set true when radio button selection changes (consume in main loop)
+    // Transparent face rendering
+    bool transparentFace = false;
+    
+    // Set true when checkbox selection changes (consume in main loop)
     bool selectionChanged = false;
     
     // Action buttons (set true when clicked, consume in main loop)

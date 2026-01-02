@@ -72,6 +72,8 @@ int main()
     }
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Initialize UI
     initUI(window);
@@ -97,7 +99,8 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // Load all OBJ files from meshDir directory
+    // Collect all OBJ file paths
+    std::vector<std::string> objPaths;
     std::vector<Mesh> meshes;
     std::vector<Mesh> originalMeshes;  // Store originals for reset
     std::vector<MeshRenderer> renderers;
@@ -108,16 +111,40 @@ int main()
     while ((entry = readdir(dir)) != nullptr) {
         std::string filename = entry->d_name;
         if (filename.length() > 4 && filename.substr(filename.length() - 4) == ".obj") {
+            objPaths.push_back(meshDir + filename);
+            // For rendering, we still need individual meshes
             meshes.push_back(Mesh::fromOBJ(meshDir + filename));
             renderers.emplace_back();
         }
     }
     closedir(dir);
 
+    // Load all OBJ files into a single combined mesh
+    Mesh mesh;
+    if (!objPaths.empty()) {
+        mesh = Mesh::fromOBJ(objPaths);
+        
+        // Analyze the combined mesh
+        std::cout << "\n=== Mesh Analysis ===" << std::endl;
+        mesh.buildEdgeFaceAdjacency();
+        mesh.analyzeMesh();
+        mesh.findBoundaryFaces();
+        mesh.analyzeComponents();
+        mesh = Mesh::fromComponents(mesh, mesh.components()[0], mesh.components()[1]);
+        std::cout << "==============================\n" << std::endl;
+    }
+
+
     // Store original meshes for reset functionality
     originalMeshes = meshes;
 
-    // Initial upload to GPU
+    // Create renderer for combined mesh (to show component highlighting)
+    MeshRenderer meshRenderer;
+    if (!objPaths.empty()) {
+        meshRenderer.upload(mesh, uiState.boundarySelection);
+    }
+
+    // Initial upload to GPU for individual meshes
     for (size_t i = 0; i < meshes.size(); ++i) {
         renderers[i].upload(meshes[i], uiState.boundarySelection);
     }
@@ -133,6 +160,7 @@ int main()
     unsigned int viewPosLoc = glGetUniformLocation(shaderProgram, "viewPos");
     unsigned int objectColorLoc = glGetUniformLocation(shaderProgram, "objectColor");
     unsigned int boundaryColorLoc = glGetUniformLocation(shaderProgram, "boundaryColor");
+    unsigned int alphaLoc = glGetUniformLocation(shaderProgram, "alpha");
 
     while (!glfwWindowShouldClose(window))
     {
@@ -142,7 +170,12 @@ int main()
         if (uiState.removeClicked) {
             uiState.removeClicked = false;
             for (size_t i = 0; i < meshes.size(); ++i) {
-                meshes[i].removeBoundaryFaces(uiState.boundarySelection);
+                // Remove all selected boundary face types
+                for (int j = 0; j < 3; ++j) {
+                    if (uiState.boundarySelection[j]) {
+                        meshes[i].removeBoundaryFaces(j);
+                    }
+                }
                 renderers[i].upload(meshes[i], uiState.boundarySelection);
             }
         }
@@ -150,6 +183,9 @@ int main()
         // Handle selection change
         if (uiState.selectionChanged) {
             uiState.selectionChanged = false;
+            if (!objPaths.empty()) {
+                meshRenderer.upload(mesh, uiState.boundarySelection);
+            }
             for (size_t i = 0; i < meshes.size(); ++i) {
                 renderers[i].upload(meshes[i], uiState.boundarySelection);
             }
@@ -185,24 +221,31 @@ int main()
         
         // Object color and boundary highlight color
         glm::vec3 objectColor(0.9f, 0.9f, 0.9f);
-        glm::vec3 boundaryColor;
-        switch (uiState.boundarySelection) {
-            case 0:  // Yellow for 1 boundary edge
-                boundaryColor = glm::vec3(1.0f, 0.9f, 0.2f);
-                break;
-            case 1:  // Red for 2 boundary edges
-                boundaryColor = glm::vec3(1.0f, 0.3f, 0.3f);
-                break;
-            default: // Orange for 3 boundary edges
-                boundaryColor = glm::vec3(1.0f, 0.5f, 0.0f);
-                break;
+        glm::vec3 boundaryColor(1.0f, 0.9f, 0.2f); // Default: Yellow
+        
+        // Use color of first selected type, or default if none selected
+        if (uiState.boundarySelection[0]) {
+            boundaryColor = glm::vec3(1.0f, 0.9f, 0.2f); // Yellow for 1 boundary edge
+        } else if (uiState.boundarySelection[1]) {
+            boundaryColor = glm::vec3(1.0f, 0.3f, 0.3f); // Red for 2 boundary edges
+        } else if (uiState.boundarySelection[2]) {
+            boundaryColor = glm::vec3(1.0f, 0.5f, 0.0f); // Orange for 3 boundary edges
         }
         glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
         glUniform3fv(boundaryColorLoc, 1, glm::value_ptr(boundaryColor));
+        
+        // Alpha value for transparency
+        float alpha = uiState.transparentFace ? 0.5f : 1.0f;
+        glUniform1f(alphaLoc, alpha);
 
-        // Draw all meshes
-        for (const auto& renderer : renderers) {
-            renderer.draw();
+        // Draw combined mesh (with component highlighting)
+        if (!objPaths.empty()) {
+            meshRenderer.draw();
+        } else {
+            // Fallback to individual meshes if no combined mesh
+            for (const auto& renderer : renderers) {
+                renderer.draw();
+            }
         }
 
         // Render UI
