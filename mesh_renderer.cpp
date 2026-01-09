@@ -42,7 +42,7 @@ void MeshRenderer::cleanup() {
     vertexCount_ = 0;
 }
 
-void MeshRenderer::upload(const Mesh& mesh, const bool highlightSelection[3]) {
+void MeshRenderer::upload(const Mesh& mesh, const bool highlightSelection[4]) {
     std::vector<float> glVertices = buildGLVertices(mesh, highlightSelection);
     vertexCount_ = static_cast<int>(glVertices.size() / 7);
     
@@ -80,7 +80,7 @@ void MeshRenderer::draw() const {
     glDrawArrays(GL_TRIANGLES, 0, vertexCount_);
 }
 
-std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, const bool highlightSelection[3]) const {
+std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, const bool highlightSelection[4]) const {
     // Build set of boundary faces (union of all selected types)
     std::unordered_set<int> boundaryFaces;
     for (int i = 0; i < 3; ++i) {
@@ -89,36 +89,22 @@ std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, const bool hi
             boundaryFaces.insert(faces.begin(), faces.end());
         }
     }
+    std::unordered_set<int> greenFaces;
+    if (highlightSelection[3]) {
+        greenFaces.insert(mesh.nonManifoldToRemove.begin(), mesh.nonManifoldToRemove.end());
+    }
     
-    // Get components (sorted by size, largest first)
-    const auto& components = mesh.components();
     
-    // Build set of faces to render (only largest 2 components)
+    // Build set of faces to render (only valid faces)
     std::unordered_set<int> facesToRender;
+
     size_t numTriangles = mesh.faceCount();
     for (size_t t = 0; t < numTriangles; ++t) {
         facesToRender.insert(t);  // 모든 face 추가
     }
-    // if (components.size() >= 1) {
-    //     facesToRender.insert(components[0].begin(), components[0].end());
-    // }
-    // if (components.size() >= 2) {
-    //     facesToRender.insert(components[1].begin(), components[1].end());
-    // }
-    // facesToRender.insert(mesh.overlappingFaces_.begin(), mesh.overlappingFaces_.end());
 
-    // Build sets of faces for each component (for fast lookup in coloring)
-    std::unordered_set<int> greenFaces;  // Largest component
     std::unordered_set<int> blueFaces;    // 2nd largest component
-    // if (components.size() >= 1) {
-    //     greenFaces.insert(components[0].begin(), components[0].end());
-    // }
-    if (components.size() >= 2) {
-        blueFaces.insert(components[1].begin(), components[1].end());
-    }
-    
-    // Build interleaved vertex data: position(3) + normal(3) + faceColor(1)
-    // faceColor values: 0.0 = normal, 1.0 = boundary, 2.0 = green component, 3.0 = blue component
+
     std::vector<float> glVertices;
     
     glVertices.reserve(facesToRender.size() * 3 * 7);

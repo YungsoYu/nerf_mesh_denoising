@@ -113,8 +113,8 @@ int main()
         if (filename.length() > 4 && filename.substr(filename.length() - 4) == ".obj") {
             objPaths.push_back(meshDir + filename);
             // For rendering, we still need individual meshes
-            meshes.push_back(Mesh::fromOBJ(meshDir + filename));
-            renderers.emplace_back();
+            // meshes.push_back(Mesh::fromOBJ(meshDir + filename));
+            // renderers.emplace_back();
         }
     }
     closedir(dir);
@@ -122,32 +122,40 @@ int main()
     // Load all OBJ files into a single combined mesh
     Mesh mesh;
     if (!objPaths.empty()) {
-        mesh = Mesh::fromOBJ(objPaths);
+        // mesh = Mesh::fromOBJ(objPaths);
+
+        mesh = Mesh::createMesh(meshDir);
         
         // Analyze the combined mesh
         std::cout << "\n=== Mesh Analysis ===" << std::endl;
         mesh.buildEdgeFaceAdjacency();
         mesh.analyzeMesh();
+        mesh.analyzeComponents();  // components를 계산해야 함
+        if (mesh.components().size() < 2) {
+            std::cerr << "Error: Need at least 2 components, but found " << mesh.components().size() << std::endl;
+            return -1;
+        }
+        mesh.keepLargestTwoComponents();
+        // keepLargestTwoComponents 후 새로운 mesh이므로 boundary 정보를 다시 계산해야 함
+        mesh.buildEdgeFaceAdjacency();
         mesh.findBoundaryFaces();
-        mesh.analyzeComponents();
-        mesh = Mesh::fromComponents(mesh, mesh.components()[0], mesh.components()[1]);
+        mesh.buildValence();
+        mesh.findNonManifoldFacesToRemove();
         std::cout << "==============================\n" << std::endl;
     }
 
 
-    // Store original meshes for reset functionality
-    originalMeshes = meshes;
-
     // Create renderer for combined mesh (to show component highlighting)
     MeshRenderer meshRenderer;
     if (!objPaths.empty()) {
-        meshRenderer.upload(mesh, uiState.boundarySelection);
+        // Convert int to bool array for renderer
+        bool boundarySelectionArray[4] = {false, false, false, false};
+        if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
+            boundarySelectionArray[uiState.boundarySelection] = true;
+        }
+        meshRenderer.upload(mesh, boundarySelectionArray);
     }
 
-    // Initial upload to GPU for individual meshes
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        renderers[i].upload(meshes[i], uiState.boundarySelection);
-    }
 
     // Matrices and uniform locations
     glm::mat4 modelMatrix = glm::mat4(1.0f);
@@ -169,34 +177,68 @@ int main()
         // Handle remove button click
         if (uiState.removeClicked) {
             uiState.removeClicked = false;
-            for (size_t i = 0; i < meshes.size(); ++i) {
-                // Remove all selected boundary face types
-                for (int j = 0; j < 3; ++j) {
-                    if (uiState.boundarySelection[j]) {
-                        meshes[i].removeBoundaryFaces(j);
-                    }
+            
+            // Remove faces based on selection
+            if (!objPaths.empty() && uiState.boundarySelection >= 0) {
+                if (uiState.boundarySelection < 3) {
+                    // Remove boundary faces
+                    mesh.removeBoundaryFaces(uiState.boundarySelection);
+                } else if (uiState.boundarySelection == 3) {
+                    // Remove non-manifold faces
+                    mesh.removeNonManifoldFaces();
                 }
-                renderers[i].upload(meshes[i], uiState.boundarySelection);
+                // Convert int to bool array for renderer
+                bool boundarySelectionArray[4] = {false, false, false, false};
+                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
+                    boundarySelectionArray[uiState.boundarySelection] = true;
+                }
+                meshRenderer.upload(mesh, boundarySelectionArray);
             }
+            
         }
         
         // Handle selection change
         if (uiState.selectionChanged) {
             uiState.selectionChanged = false;
             if (!objPaths.empty()) {
-                meshRenderer.upload(mesh, uiState.boundarySelection);
-            }
-            for (size_t i = 0; i < meshes.size(); ++i) {
-                renderers[i].upload(meshes[i], uiState.boundarySelection);
+                // Convert int to bool array for renderer
+                bool boundarySelectionArray[4] = {false, false, false, false};
+                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
+                    boundarySelectionArray[uiState.boundarySelection] = true;
+                }
+                meshRenderer.upload(mesh, boundarySelectionArray);
             }
         }
         
-        // Handle reset button click
-        if (uiState.resetClicked) {
-            uiState.resetClicked = false;
-            meshes = originalMeshes;
-            for (size_t i = 0; i < meshes.size(); ++i) {
-                renderers[i].upload(meshes[i], uiState.boundarySelection);
+        
+        // Handle traverse button click
+        if (uiState.traverseClicked) {
+            uiState.traverseClicked = false;
+            if (!objPaths.empty()) {
+                mesh.findNonManifoldFacesToRemove();
+                // Update renderer to reflect marked faces
+                bool boundarySelectionArray[4] = {false, false, false, false};
+                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
+                    boundarySelectionArray[uiState.boundarySelection] = true;
+                }
+                meshRenderer.upload(mesh, boundarySelectionArray);
+            }
+        }
+        
+        
+        // Handle component button click
+        if (uiState.componentClicked) {
+            uiState.componentClicked = false;
+            if (!objPaths.empty()) {
+                mesh.keepLargestTwoComponents();
+                mesh.buildEdgeFaceAdjacency();
+                mesh.findBoundaryFaces();
+                mesh.buildValence();
+                bool boundarySelectionArray[4] = {false, false, false, false};
+                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
+                    boundarySelectionArray[uiState.boundarySelection] = true;
+                }
+                meshRenderer.upload(mesh, boundarySelectionArray);
             }
         }
 
@@ -223,13 +265,17 @@ int main()
         glm::vec3 objectColor(0.9f, 0.9f, 0.9f);
         glm::vec3 boundaryColor(1.0f, 0.9f, 0.2f); // Default: Yellow
         
-        // Use color of first selected type, or default if none selected
-        if (uiState.boundarySelection[0]) {
+        // Use color based on selected boundary type
+        if (uiState.boundarySelection == 0) {
             boundaryColor = glm::vec3(1.0f, 0.9f, 0.2f); // Yellow for 1 boundary edge
-        } else if (uiState.boundarySelection[1]) {
+        } else if (uiState.boundarySelection == 1) {
             boundaryColor = glm::vec3(1.0f, 0.3f, 0.3f); // Red for 2 boundary edges
-        } else if (uiState.boundarySelection[2]) {
+        } else if (uiState.boundarySelection == 2) {
             boundaryColor = glm::vec3(1.0f, 0.5f, 0.0f); // Orange for 3 boundary edges
+        } else if (uiState.boundarySelection == 3) {
+            boundaryColor = glm::vec3(0.0f, 1.0f, 0.0f); // Green for non-manifold faces
+        } else if (uiState.boundarySelection == 3) {
+            boundaryColor = glm::vec3(0.0f, 1.0f, 0.0f); // Green for non-manifold faces
         }
         glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
         glUniform3fv(boundaryColorLoc, 1, glm::value_ptr(boundaryColor));

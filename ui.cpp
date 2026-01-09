@@ -25,7 +25,7 @@ void renderUI(UIState& state)
 
     // Create UI panel
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(220, 180), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(250, 280), ImGuiCond_Always);
     ImGui::Begin("Mesh Analysis", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
     // Transparent face checkbox
@@ -33,15 +33,18 @@ void renderUI(UIState& state)
     
     ImGui::Spacing();
     
-    // Checkboxes for boundary selection
+    // Radio buttons for boundary selection (only one can be selected)
     ImGui::Text("Select faces to highlight:");
-    if (ImGui::Checkbox("1 Boundary Edge", &state.boundarySelection[0])) {
+    if (ImGui::RadioButton("1 Boundary Edge", &state.boundarySelection, 0)) {
         state.selectionChanged = true;
     }
-    if (ImGui::Checkbox("2 Boundary Edges", &state.boundarySelection[1])) {
+    if (ImGui::RadioButton("2 Boundary Edges", &state.boundarySelection, 1)) {
         state.selectionChanged = true;
     }
-    if (ImGui::Checkbox("3 Boundary Edges", &state.boundarySelection[2])) {
+    if (ImGui::RadioButton("3 Boundary Edges", &state.boundarySelection, 2)) {
+        state.selectionChanged = true;
+    }
+    if (ImGui::RadioButton("Non-manifold faces to remove", &state.boundarySelection, 3)) {
         state.selectionChanged = true;
     }
     
@@ -51,9 +54,12 @@ void renderUI(UIState& state)
     if (ImGui::Button("Remove")) {
         state.removeClicked = true;
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Reset")) {
-        state.resetClicked = true;
+    
+    ImGui::Spacing();
+    
+    // Component button
+    if (ImGui::Button("Component")) {
+        state.componentClicked = true;
     }
 
     ImGui::End();

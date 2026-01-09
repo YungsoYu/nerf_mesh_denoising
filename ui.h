@@ -4,18 +4,21 @@
 #include <GLFW/glfw3.h>
 
 struct UIState {
-    // Boundary face selection: [0] = 1 edge, [1] = 2 edges, [2] = 3 edges
-    bool boundarySelection[3] = {false, false, false};
+    // Face selection: -1 = none, 0 = 1 boundary edge, 1 = 2 boundary edges, 2 = 3 boundary edges, 3 = non-manifold faces to remove
+    int boundarySelection = -1;
     
     // Transparent face rendering
     bool transparentFace = false;
     
-    // Set true when checkbox selection changes (consume in main loop)
+    // Set true when radio button selection changes (consume in main loop)
     bool selectionChanged = false;
     
     // Action buttons (set true when clicked, consume in main loop)
     bool removeClicked = false;
     bool resetClicked = false;
+    bool traverseClicked = false;
+    bool traverse2Clicked = false;
+    bool componentClicked = false;
 };
 
 // Initialize ImGui - call once after creating GLFW window and loading OpenGL

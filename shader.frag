@@ -40,7 +40,7 @@ void main()
         color = objectColor;
     }
     
-    // vec3 result = (ambient + diffuse) * color;
-    vec3 result = color;
+    vec3 result = (ambient + diffuse) * color;
+    //vec3 result = color;
     FragColor = vec4(result, alpha);
 }

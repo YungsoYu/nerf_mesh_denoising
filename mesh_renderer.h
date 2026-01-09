@@ -27,7 +27,8 @@ public:
     MeshRenderer& operator=(MeshRenderer&& other) noexcept;
     
     // Upload mesh data to GPU
-    void upload(const Mesh& mesh, const bool highlightSelection[3]);
+    // highlightSelection: [0]=1 boundary edge, [1]=2 boundary edges, [2]=3 boundary edges, [3]=non-manifold faces
+    void upload(const Mesh& mesh, const bool highlightSelection[4]);
     
     // Draw the mesh
     void draw() const;
@@ -41,7 +42,7 @@ private:
     int vertexCount_ = 0;
     
     // Build interleaved vertex data for GPU
-    std::vector<float> buildGLVertices(const Mesh& mesh, const bool highlightSelection[3]) const;
+    std::vector<float> buildGLVertices(const Mesh& mesh, const bool highlightSelection[4]) const;
 };
 
 #endif
