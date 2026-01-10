@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -105,6 +106,91 @@ void Mesh::loadFromOBJ(const std::string& path) {
               << "  Triangles added: " << trianglesAdded << std::endl;
 }
 
+void Mesh::loadFromOBJ2(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open: " << path << std::endl;
+        return;
+    }
+    
+    // Build global verticesMap from existing vertices_ (across all previously loaded files)
+    std::unordered_map<glm::vec3, int, Vec3Hash, Vec3Equal> verticesMap;
+    for (size_t i = 0; i < vertices_.size(); ++i) {
+        verticesMap[vertices_[i]] = static_cast<int>(i);
+    }
+    
+    // index mapping from old (duplicated vertices in original file) to new (unique vertices in global verticesMap)
+    std::vector<int> oldToNewIndex;
+    
+    int rawVertexCount = 0;
+    int newVerticesAdded = 0;
+    std::string line;
+    
+    while (std::getline(file, line)) {
+        if (line.substr(0, 2) == "v ") {
+            // Parse vertex position
+            std::istringstream iss(line.substr(2));
+            float x, y, z;
+            iss >> x >> y >> z;
+            glm::vec3 pos(x, y, z);
+            
+            // Check if this position already exists in global map (across all files)
+            auto it = verticesMap.find(pos);
+            if (it == verticesMap.end()) {
+                // New unique vertex across all files - add to mesh
+                int newIdx = static_cast<int>(vertices_.size());
+                verticesMap[pos] = newIdx;
+                vertices_.push_back(pos);
+                oldToNewIndex.push_back(newIdx);
+                newVerticesAdded++;
+            } else {
+                // Duplicate - reuse existing vertex index from global map
+                oldToNewIndex.push_back(it->second);
+            }
+            rawVertexCount++;
+        } 
+        else if (line.substr(0, 2) == "f ") {
+            // Parse triangle face
+            std::istringstream iss(line.substr(2));
+            std::string token;
+            int indices[3];
+            
+            for (int i = 0; i < 3 && iss >> token; ++i) {
+                size_t pos = token.find('/');
+                if (pos != std::string::npos) {
+                    token = token.substr(0, pos);
+                }
+                int objIdx = std::stoi(token) - 1;
+                indices[i] = oldToNewIndex[objIdx];
+            }
+            
+            indices_.push_back(indices[0]);
+            indices_.push_back(indices[1]);
+            indices_.push_back(indices[2]);
+            
+            // Compute face normal
+            glm::vec3 v0 = vertices_[indices[0]];
+            glm::vec3 v1 = vertices_[indices[1]];
+            glm::vec3 v2 = vertices_[indices[2]];
+            glm::vec3 edge1 = v1 - v0;
+            glm::vec3 edge2 = v2 - v0;
+            glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
+            
+            faceNormals_.push_back(normal);
+        }
+    }
+    
+    size_t trianglesBefore = faceNormals_.size();
+    size_t trianglesAfter = indices_.size() / 3;
+    size_t trianglesAdded = trianglesAfter - trianglesBefore;
+    
+    std::cout << "Appended OBJ file (global deduplication):\n"
+              << "  Vertices including duplicates: " << rawVertexCount << "\n"
+              << "  New vertices added (excluding all duplicates): " << newVerticesAdded << "\n"
+              << "  Total unique vertices (across all files): " << verticesMap.size() << "\n"
+              << "  Triangles added: " << trianglesAdded << std::endl;
+}
+
 Mesh Mesh::createMesh(const std::string& meshDir) {
     Mesh mesh;
     DIR* dir = opendir(meshDir.c_str());
@@ -131,128 +217,13 @@ Mesh Mesh::createMesh(const std::string& meshDir) {
 
     // Load all OBJ files and append them to the mesh
     for (const auto& objPath : objPaths) {
-        mesh.loadFromOBJ(objPath);
+        mesh.loadFromOBJ2(objPath);
     }
+
     
     return mesh;
 }
 
-Mesh Mesh::fromComponents(const Mesh& source,
-                          const std::vector<int>& component0, 
-                          const std::vector<int>& component1) {
-    Mesh combinedMesh;
-    
-    // Combine both components into a set for fast lookup
-    std::unordered_set<int> facesToInclude;
-    facesToInclude.insert(component0.begin(), component0.end());
-    facesToInclude.insert(component1.begin(), component1.end());
-    
-    // Get source mesh data
-    const auto& sourceVertices = source.vertices();
-    const auto& sourceIndices = source.indices();
-    const auto& sourceFaceNormals = source.faceNormals();
-    
-    // Map from old vertex index to new vertex index
-    std::unordered_map<int, int> oldToNewVertexMap;
-    
-    // First pass: collect all vertices used by the selected faces
-    for (int faceIdx : facesToInclude) {
-        if (faceIdx < 0 || faceIdx >= static_cast<int>(source.faceCount())) {
-            continue; // Skip invalid face indices
-        }
-        
-        // Get the three vertex indices for this face
-        int v0 = sourceIndices[faceIdx * 3 + 0];
-        int v1 = sourceIndices[faceIdx * 3 + 1];
-        int v2 = sourceIndices[faceIdx * 3 + 2];
-        
-        // Add vertices to the map if not already present
-        if (oldToNewVertexMap.find(v0) == oldToNewVertexMap.end()) {
-            int newIdx = static_cast<int>(combinedMesh.vertices_.size());
-            oldToNewVertexMap[v0] = newIdx;
-            combinedMesh.vertices_.push_back(sourceVertices[v0]);
-        }
-        if (oldToNewVertexMap.find(v1) == oldToNewVertexMap.end()) {
-            int newIdx = static_cast<int>(combinedMesh.vertices_.size());
-            oldToNewVertexMap[v1] = newIdx;
-            combinedMesh.vertices_.push_back(sourceVertices[v1]);
-        }
-        if (oldToNewVertexMap.find(v2) == oldToNewVertexMap.end()) {
-            int newIdx = static_cast<int>(combinedMesh.vertices_.size());
-            oldToNewVertexMap[v2] = newIdx;
-            combinedMesh.vertices_.push_back(sourceVertices[v2]);
-        }
-    }
-    
-    // Second pass: build indices and normals for the combined mesh
-    for (int faceIdx : facesToInclude) {
-        if (faceIdx < 0 || faceIdx >= static_cast<int>(source.faceCount())) {
-            continue;
-        }
-        
-        // Get old vertex indices
-        int oldV0 = sourceIndices[faceIdx * 3 + 0];
-        int oldV1 = sourceIndices[faceIdx * 3 + 1];
-        int oldV2 = sourceIndices[faceIdx * 3 + 2];
-        
-        // Map to new vertex indices
-        int newV0 = oldToNewVertexMap[oldV0];
-        int newV1 = oldToNewVertexMap[oldV1];
-        int newV2 = oldToNewVertexMap[oldV2];
-        
-        // Add indices
-        combinedMesh.indices_.push_back(newV0);
-        combinedMesh.indices_.push_back(newV1);
-        combinedMesh.indices_.push_back(newV2);
-        
-        // Add face normal
-        combinedMesh.faceNormals_.push_back(sourceFaceNormals[faceIdx]);
-    }
-    
-    std::cout << "Combined components into new mesh:\n"
-              << "  Component 0 faces: " << component0.size() << "\n"
-              << "  Component 1 faces: " << component1.size() << "\n"
-              << "  Total faces: " << facesToInclude.size() << "\n"
-              << "  Vertices: " << combinedMesh.vertices_.size() << "\n"
-              << "  Triangles: " << combinedMesh.faceCount() << std::endl;
-
-    
-    return combinedMesh;
-}
-
-void Mesh::keepLargestTwoComponents() {
-    // Ensure components are analyzed
-    if (components_.empty()) {
-        analyzeComponents();
-    }
-    
-    if (components_.size() < 2) {
-        std::cerr << "Error: Need at least 2 components, but found " << components_.size() << std::endl;
-        return;
-    }
-    
-    // Build set of faces to keep (faces in the two largest components)
-    std::unordered_set<int> facesToKeep;
-    facesToKeep.insert(components_[0].begin(), components_[0].end());
-    facesToKeep.insert(components_[1].begin(), components_[1].end());
-    
-    // Find all faces that should be removed (not in the two largest components)
-    std::vector<int> facesToRemove;
-    int numTriangles = static_cast<int>(indices_.size() / 3);
-    for (int faceIdx = 0; faceIdx < numTriangles; faceIdx++) {
-        if (facesToKeep.count(faceIdx) == 0) {
-            facesToRemove.push_back(faceIdx);
-        }
-    }
-    
-    // Remove faces not in the two largest components
-    removeFaces(facesToRemove);
-    
-    std::cout << "Kept only the two largest components:\n"
-              << "  Component 0: " << components_[0].size() << " faces\n"
-              << "  Component 1: " << components_[1].size() << " faces\n"
-              << "  Removed " << facesToRemove.size() << " faces" << std::endl;
-}
 
 void Mesh::buildEdgeFaceAdjacency() {
     edgeToFaces_.clear();
@@ -272,8 +243,8 @@ void Mesh::buildEdgeFaceAdjacency() {
 void Mesh::analyzeMesh() const {
     int boundaryEdges = 0;
     int manifoldEdges = 0;
-    int nonManifoldEdges_3 = 0;
-    int nonManifoldEdges_4 = 0;
+    nonManifoldWith3Faces_ = 0;
+    nonManifoldWith4Faces_ = 0;
     int nonManifoldEdges = 0;
 
     for (const auto& [edge, faceList] : edgeToFaces_) {
@@ -284,20 +255,21 @@ void Mesh::analyzeMesh() const {
         } else if (count == 2) {
             manifoldEdges++;
         } else if (count == 3) {
-            nonManifoldEdges_3++;
+            nonManifoldWith3Faces_++;
         } else if (count == 4) {
-            nonManifoldEdges_4++;
+            nonManifoldWith4Faces_++;
         } else {
             nonManifoldEdges++;
         }
     }
 
+
     std::cout << "Edge analysis:\n"
               << "  Total edges: " << edgeToFaces_.size() << "\n"
               << "  Boundary edges (1 face): " << boundaryEdges << "\n"
               << "  Manifold edges (2 faces): " << manifoldEdges << "\n"
-              << "  Non-manifold edges (3 faces): " << nonManifoldEdges_3 << "\n"
-              << "  Non-manifold edges (4 faces): " << nonManifoldEdges_4 << "\n"
+              << "  Non-manifold edges (3 faces): " << nonManifoldWith3Faces_ << "\n"
+              << "  Non-manifold edges (4 faces): " << nonManifoldWith4Faces_ << "\n"
               << "  Non-manifold edges (5+ faces): " << nonManifoldEdges << std::endl;
 }
 
@@ -687,7 +659,9 @@ void Mesh::findNonManifoldFacesToRemove() { // 3-manifold (valance)
 }
 
 
-void Mesh::analyzeComponents() const {
+std::vector<std::vector<int>> Mesh::getComponents() {
+    std::cout << "◦ Progressing: component analysis ..." << std::endl;
+
     int numTriangles = static_cast<int>(indices_.size() / 3);
     std::vector<bool> visited(numTriangles, false);
     std::vector<std::vector<int>> components;
@@ -760,42 +734,23 @@ void Mesh::analyzeComponents() const {
                   return a.size() > b.size();
               });
     
-    // Store all components
-    components_ = components;
-    
     // Output results
-    std::cout << "Connected components:\n"
-              << "  Total components: " << components.size() << std::endl;
+    std::cout << "• Completed: component analysis\n"
+              << "  - total components: " << components.size() << std::endl;
+
     
-    if (!components.empty()) {
-        std::cout << "  Component sizes (largest first):\n";
-        int displayCount = std::min(10, static_cast<int>(components.size()));
-        for (int i = 0; i < displayCount; ++i) {
-            std::cout << "    Component " << (i + 1) << ": " 
-                      << components[i].size() << " faces";
-            if (i == 0) {
-                std::cout << " (largest)";
-            }
-            if (i == 1) {
-                std::cout << " (2nd largest)";
-            }
-            std::cout << std::endl;
-        }
-        if (components.size() > displayCount) {
-            std::cout << "    ... (" << (components.size() - displayCount) 
-                      << " more components)" << std::endl;
-        }
-        if (components.size() >= 1) {
-            std::cout << "  Highlighting largest component (" 
-                      << components[0].size() << " faces) in green" << std::endl;
-        }
-        if (components.size() >= 2) {
-            std::cout << "  Highlighting 2nd largest component (" 
-                      << components[1].size() << " faces) in blue" << std::endl;
+    for (int i = 0; i < components.size(); ++i) {
+        std::cout << "    Component " << (i + 1) << ": " 
+                    << components[i].size() << " faces";
+
+        std::cout << std::endl;
+        if (i > 7) {
+            break;
         }
     }
-}
 
+    return components;
+}
 
 void Mesh::removeFaces(const std::vector<int>& facesToRemoveVec) {
     if (facesToRemoveVec.empty()) {
@@ -825,12 +780,17 @@ void Mesh::removeFaces(const std::vector<int>& facesToRemoveVec) {
     indices_ = std::move(newIndices);
     faceNormals_ = std::move(newNormals);
     
-    // Rebuild adjacency and boundary info after modification
+
     buildEdgeFaceAdjacency();
-    analyzeMesh();
-    findBoundaryFaces();
-    buildValence();
-    analyzeComponents(); 
+    std::vector<std::vector<int>> components = getComponents(); 
+    if (components.size() > 1) {
+        removeRestComponents(components);
+    } else {
+        analyzeMesh();
+        findBoundaryFaces();
+        buildValence();
+        findNonManifoldFacesToRemove();
+    }
 }
 
 void Mesh::removeBoundaryFaces(int boundarySelection) {
@@ -844,15 +804,45 @@ void Mesh::removeBoundaryFaces(int boundarySelection) {
 }
 
 void Mesh::removeNonManifoldFaces() {
-    if (nonManifoldToRemove.empty()) {
-        // First, we need to compute non-manifold faces
-        // Call traverseFaces which will populate nonManifoldToRemove and remove faces
-        findNonManifoldFacesToRemove();
-        std::cout << " (non-manifold faces removed via traverseFaces)" << std::endl;
+    std::cout << "◦ Processing: removing non-manifold faces ..." << std::endl;
+    if (nonManifoldWith4Faces_ > 0 && nonManifoldWith3Faces_ > 10000) {
+        if (nonManifoldToRemove.empty()) {
+            std::cout << "• Failed: no non-manifold faces to remove" << std::endl;
+        } else {
+            std::vector<int> facesToRemoveVec(nonManifoldToRemove.begin(), nonManifoldToRemove.end());
+            removeFaces(facesToRemoveVec);
+            std::cout << "• Completed: non-manifold faces removed: " << facesToRemoveVec.size() << " faces" << std::endl;
+        }
     } else {
-        // Use already computed non-manifold faces
-        std::vector<int> facesToRemoveVec(nonManifoldToRemove.begin(), nonManifoldToRemove.end());
-        removeFaces(facesToRemoveVec);
-        std::cout << " (non-manifold faces removed: " << facesToRemoveVec.size() << " faces)" << std::endl;
+        std::cout << "• Failed: Too small non-manifold faces to remove " << std::endl;
+    }
+}
+
+void Mesh::removeRestComponents(std::vector<std::vector<int>>& components) {
+    // Keep only the largest component
+    std::unordered_set<int> facesToRemove;
+
+    if (components.size() > 1) {
+        std::cout << "◦ Processing: removing other components except the largest component..." << std::endl;
+        double component0Size = static_cast<double>(components[0].size());
+        double component1Size = static_cast<double>(components[1].size());
+        double percentage = (component1Size / component0Size) * 100.0;
+    
+        if (percentage < 10.0) {
+            // Find all faces that should be removed (all components except the largest)
+            for (int i = 1; i < components.size(); i++) {
+                facesToRemove.insert(components[i].begin(), components[i].end());
+            }
+            
+            // Convert unordered_set to vector for removeFaces
+            std::vector<int> facesToRemoveVec(facesToRemove.begin(), facesToRemove.end());
+            
+            if (!facesToRemoveVec.empty()) {
+                removeFaces(facesToRemoveVec);
+                std::cout << "• Completed: removed " << facesToRemoveVec.size() << " faces from smaller components" << std::endl;
+            }
+        } else {
+            std::cout << "✕ Warning: the second largest component is too large to be removed" << std::endl;
+        }
     }
 }

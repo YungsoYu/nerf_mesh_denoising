@@ -22,20 +22,15 @@ class Mesh {
 public:
     // Factory method to load from directory containing OBJ files (creates new mesh)
     static Mesh createMesh(const std::string& meshDir);
-    // Factory method to combine two components into a new mesh
-    static Mesh fromComponents(const Mesh& source,
-                               const std::vector<int>& component0, 
-                               const std::vector<int>& component1);
     
-    
+    std::vector<std::vector<int>> getComponents();
+
     // Mesh operations
     void removeFaces(const std::vector<int>& facesToRemove);
     void removeBoundaryFaces(int boundarySelection);  // Convenience wrapper
     void removeNonManifoldFaces();  // Remove faces stored in nonManifoldToRemove
-    void analyzeComponents() const;
-    // Keep only the two largest components (removes all other components)
-    void keepLargestTwoComponents();
-    
+    void removeRestComponents(std::vector<std::vector<int>>& components);
+
     // Analysis functions (called from main)
     void buildEdgeFaceAdjacency();
     void findBoundaryFaces();
@@ -47,8 +42,9 @@ public:
     const std::vector<int>& indices() const { return indices_; }
     const std::vector<glm::vec3>& faceNormals() const { return faceNormals_; }
     const std::vector<int>& boundaryFaces(int selection) const { return boundaryFaces_[selection]; }
-    const std::vector<std::vector<int>>& components() const { return components_; }
     const std::vector<int>& vertexValences() const { return vertexValences_; }
+    int nonManifoldWith3Faces() const { return nonManifoldWith3Faces_; }
+    int nonManifoldWith4Faces() const { return nonManifoldWith4Faces_; }
     size_t faceCount() const { return indices_.size() / 3; }
 
      std::unordered_set<int> nonManifoldToRemove;  // Set of valid faces to render
@@ -66,15 +62,17 @@ private:
     
     // Boundary faces by edge count: [0]=1 edge, [1]=2 edges, [2]=3 edges
     std::array<std::vector<int>, 3> boundaryFaces_;
-    
-    // Connected components (sorted by size): each component is a vector of face indices
-    mutable std::vector<std::vector<int>> components_;
+    mutable int nonManifoldWith3Faces_;  // Cache for analysis (mutable so const functions can modify)
+    mutable int nonManifoldWith4Faces_;  // Cache for analysis (mutable so const functions can modify)
     
     // Vertex valence: number of neighboring vertices for each vertex
     std::vector<int> vertexValences_;
 
     // Load OBJ file and append to existing mesh
     void loadFromOBJ(const std::string& path);
+    
+    // Load OBJ file and append to existing mesh (removes duplicates across all files)
+    void loadFromOBJ2(const std::string& path);
     
 };
 

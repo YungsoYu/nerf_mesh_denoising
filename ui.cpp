@@ -51,7 +51,7 @@ void renderUI(UIState& state)
     ImGui::Spacing();
     
     // Action buttons
-    if (ImGui::Button("Remove")) {
+    if (ImGui::Button("Remove highlighted faces")) {
         state.removeClicked = true;
     }
     

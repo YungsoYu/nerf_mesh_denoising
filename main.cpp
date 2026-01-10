@@ -126,24 +126,17 @@ int main()
 
         mesh = Mesh::createMesh(meshDir);
         
-        // Analyze the combined mesh
-        std::cout << "\n=== Mesh Analysis ===" << std::endl;
         mesh.buildEdgeFaceAdjacency();
-        mesh.analyzeMesh();
-        mesh.analyzeComponents();  // components를 계산해야 함
-        if (mesh.components().size() < 2) {
-            std::cerr << "Error: Need at least 2 components, but found " << mesh.components().size() << std::endl;
-            return -1;
+        std::vector<std::vector<int>> components = mesh.getComponents(); 
+        if (components.size() > 1) {
+            mesh.removeRestComponents(components);
+        } else {
+            mesh.analyzeMesh();
+            mesh.findBoundaryFaces();
+            mesh.buildValence();
+            mesh.findNonManifoldFacesToRemove();
         }
-        mesh.keepLargestTwoComponents();
-        // keepLargestTwoComponents 후 새로운 mesh이므로 boundary 정보를 다시 계산해야 함
-        mesh.buildEdgeFaceAdjacency();
-        mesh.findBoundaryFaces();
-        mesh.buildValence();
-        mesh.findNonManifoldFacesToRemove();
-        std::cout << "==============================\n" << std::endl;
     }
-
 
     // Create renderer for combined mesh (to show component highlighting)
     MeshRenderer meshRenderer;
@@ -230,7 +223,6 @@ int main()
         if (uiState.componentClicked) {
             uiState.componentClicked = false;
             if (!objPaths.empty()) {
-                mesh.keepLargestTwoComponents();
                 mesh.buildEdgeFaceAdjacency();
                 mesh.findBoundaryFaces();
                 mesh.buildValence();
