@@ -4,8 +4,8 @@ An OpenGL/C++ program for refining and smoothing meshes reconstructed from Mobil
 
 ## Features
 
-- ✅ **Mesh Rendering** - Interactive 3D visualization with camera controls
-- 🔄 **Auto Mesh Cleanup** - Automatic removal of problematic geometry (in progress)
+- ✅ [Done] **Mesh Rendering** - Interactive 3D visualization with camera controls
+- 🔄 [In progress] **Auto Mesh Cleanup** - Automatic removal of problematic geometry (in progress)
 - ✅ **Manual Mesh Cleanup** - Boundary and non-manifold face removal
 - 📋 **Smoothing** - Surface smoothing algorithms (planned)
 
