@@ -23,43 +23,56 @@ void renderUI(UIState& state)
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Create UI panel
+    // Create UI panel (width reduced to 3/4: 250 * 0.75 = 187.5 ≈ 188)
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250, 280), ImGuiCond_Always);
-    ImGui::Begin("Mesh Analysis", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::SetNextWindowSize(ImVec2(188, 350), ImGuiCond_Always);
+    ImGui::Begin("Mesh", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 
-    // Transparent face checkbox
-    ImGui::Checkbox("Transparent Face", &state.transparentFace);
-    
+    // === Mesh Rendering ===
     ImGui::Spacing();
-    
-    // Radio buttons for boundary selection (only one can be selected)
-    ImGui::Text("Select faces to highlight:");
-    if (ImGui::RadioButton("1 Boundary Edge", &state.boundarySelection, 0)) {
-        state.selectionChanged = true;
-    }
-    if (ImGui::RadioButton("2 Boundary Edges", &state.boundarySelection, 1)) {
-        state.selectionChanged = true;
-    }
-    if (ImGui::RadioButton("3 Boundary Edges", &state.boundarySelection, 2)) {
-        state.selectionChanged = true;
-    }
-    if (ImGui::RadioButton("Non-manifold faces to remove", &state.boundarySelection, 3)) {
-        state.selectionChanged = true;
+    if (ImGui::CollapsingHeader("Mesh Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Transparent Face", &state.transparentFace);
+
     }
     
+    // === Auto Mesh Cleanup ===
     ImGui::Spacing();
-    
-    // Action buttons
-    if (ImGui::Button("Remove highlighted faces")) {
-        state.removeClicked = true;
+    if (ImGui::CollapsingHeader("Auto Mesh Cleanup", ImGuiTreeNodeFlags_DefaultOpen)) {
+
     }
     
+    // === Manual Refinement ===
     ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Manual Mesh Cleanup", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextWrapped("Select faces to highlight:");
+        if (ImGui::RadioButton("1 Boundary Edge", &state.boundarySelection, 0)) {
+            state.selectionChanged = true;
+        }
+        if (ImGui::RadioButton("2 Boundary Edges", &state.boundarySelection, 1)) {
+            state.selectionChanged = true;
+        }
+        if (ImGui::RadioButton("3 Boundary Edges", &state.boundarySelection, 2)) {
+            state.selectionChanged = true;
+        }
+        // Set text wrap position for long labels
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionMax().x);
+        if (ImGui::RadioButton("Non-manifold faces to remove", &state.boundarySelection, 3)) {
+            state.selectionChanged = true;
+        }
+        ImGui::PopTextWrapPos();
+        
+        ImGui::Spacing();
+        // Button - use short text to fit in smaller width
+        if (ImGui::Button("Remove highlighted faces")) {
+            state.removeClicked = true;
+        }
+
+    }
     
-    // Component button
-    if (ImGui::Button("Component")) {
-        state.componentClicked = true;
+    // === Smoothing ===
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Smoothing", ImGuiTreeNodeFlags_DefaultOpen)) {
+
     }
 
     ImGui::End();

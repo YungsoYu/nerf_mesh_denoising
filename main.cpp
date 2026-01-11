@@ -105,8 +105,16 @@ int main()
     std::vector<Mesh> originalMeshes;  // Store originals for reset
     std::vector<MeshRenderer> renderers;
     std::string meshDir = "mesh/hotdog/";
+    // std::string meshDir = "mesh/chair/";  // Note: directory name has a leading space
     
     DIR* dir = opendir(meshDir.c_str());
+    if (dir == nullptr) {
+        std::cerr << "Error: Failed to open directory: " << meshDir << std::endl;
+        std::cerr << "Please check if the directory exists." << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+    
     struct dirent* entry;
     while ((entry = readdir(dir)) != nullptr) {
         std::string filename = entry->d_name;
@@ -203,36 +211,6 @@ int main()
             }
         }
         
-        
-        // Handle traverse button click
-        if (uiState.traverseClicked) {
-            uiState.traverseClicked = false;
-            if (!objPaths.empty()) {
-                mesh.findNonManifoldFacesToRemove();
-                // Update renderer to reflect marked faces
-                bool boundarySelectionArray[4] = {false, false, false, false};
-                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
-                    boundarySelectionArray[uiState.boundarySelection] = true;
-                }
-                meshRenderer.upload(mesh, boundarySelectionArray);
-            }
-        }
-        
-        
-        // Handle component button click
-        if (uiState.componentClicked) {
-            uiState.componentClicked = false;
-            if (!objPaths.empty()) {
-                mesh.buildEdgeFaceAdjacency();
-                mesh.findBoundaryFaces();
-                mesh.buildValence();
-                bool boundarySelectionArray[4] = {false, false, false, false};
-                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
-                    boundarySelectionArray[uiState.boundarySelection] = true;
-                }
-                meshRenderer.upload(mesh, boundarySelectionArray);
-            }
-        }
 
         // Render
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);

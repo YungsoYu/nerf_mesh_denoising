@@ -805,7 +805,7 @@ void Mesh::removeBoundaryFaces(int boundarySelection) {
 
 void Mesh::removeNonManifoldFaces() {
     std::cout << "◦ Processing: removing non-manifold faces ..." << std::endl;
-    if (nonManifoldWith4Faces_ > 0 && nonManifoldWith3Faces_ > 10000) {
+    if (nonManifoldWith4Faces_ >= 0 && nonManifoldWith3Faces_ > 10000) {
         if (nonManifoldToRemove.empty()) {
             std::cout << "• Failed: no non-manifold faces to remove" << std::endl;
         } else {
