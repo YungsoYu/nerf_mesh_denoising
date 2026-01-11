@@ -11,4 +11,5 @@ An OpenGL/C++ program for refining and smoothing meshes reconstructed from Mobil
 
 ## Screenshots
 
+<img width="975" height="832" alt="Screen Shot 2026-01-11 at 5 50 10 PM" src="https://github.com/user-attachments/assets/78f19305-7b43-4015-b0ce-7cd609120597" />
 
