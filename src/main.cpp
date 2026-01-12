@@ -99,39 +99,18 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // Collect all OBJ file paths
-    std::vector<std::string> objPaths;
-    std::vector<Mesh> meshes;
-    std::vector<Mesh> originalMeshes;  // Store originals for reset
-    std::vector<MeshRenderer> renderers;
-    std::string meshDir = "mesh/hotdog/";
-    // std::string meshDir = "mesh/chair/";  // Note: directory name has a leading space
+    std::string meshDir = "obj/hotdog/";
+    // std::string meshDir = "mesh/chair/"; 
     
+    Mesh mesh;
+
     DIR* dir = opendir(meshDir.c_str());
     if (dir == nullptr) {
         std::cerr << "Error: Failed to open directory: " << meshDir << std::endl;
         std::cerr << "Please check if the directory exists." << std::endl;
         glfwTerminate();
         return -1;
-    }
-    
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string filename = entry->d_name;
-        if (filename.length() > 4 && filename.substr(filename.length() - 4) == ".obj") {
-            objPaths.push_back(meshDir + filename);
-            // For rendering, we still need individual meshes
-            // meshes.push_back(Mesh::fromOBJ(meshDir + filename));
-            // renderers.emplace_back();
-        }
-    }
-    closedir(dir);
-
-    // Load all OBJ files into a single combined mesh
-    Mesh mesh;
-    if (!objPaths.empty()) {
-        // mesh = Mesh::fromOBJ(objPaths);
-
+    } else {
         mesh = Mesh::createMesh(meshDir);
         
         mesh.buildEdgeFaceAdjacency();
@@ -140,6 +119,7 @@ int main()
             mesh.removeRestComponents(components);
         } else {
             mesh.analyzeMesh();
+            mesh.buildFaceStatus();
             mesh.findBoundaryFaces();
             mesh.buildValence();
             mesh.findNonManifoldFacesToRemove();
@@ -148,14 +128,7 @@ int main()
 
     // Create renderer for combined mesh (to show component highlighting)
     MeshRenderer meshRenderer;
-    if (!objPaths.empty()) {
-        // Convert int to bool array for renderer
-        bool boundarySelectionArray[4] = {false, false, false, false};
-        if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
-            boundarySelectionArray[uiState.boundarySelection] = true;
-        }
-        meshRenderer.upload(mesh, boundarySelectionArray);
-    }
+    meshRenderer.upload(mesh, uiState.boundarySelection);
 
 
     // Matrices and uniform locations
@@ -167,8 +140,6 @@ int main()
     // Lighting uniform locations
     unsigned int lightPosLoc = glGetUniformLocation(shaderProgram, "lightPos");
     unsigned int viewPosLoc = glGetUniformLocation(shaderProgram, "viewPos");
-    unsigned int objectColorLoc = glGetUniformLocation(shaderProgram, "objectColor");
-    unsigned int boundaryColorLoc = glGetUniformLocation(shaderProgram, "boundaryColor");
     unsigned int alphaLoc = glGetUniformLocation(shaderProgram, "alpha");
 
     while (!glfwWindowShouldClose(window))
@@ -180,20 +151,15 @@ int main()
             uiState.removeClicked = false;
             
             // Remove faces based on selection
-            if (!objPaths.empty() && uiState.boundarySelection >= 0) {
-                if (uiState.boundarySelection < 3) {
+            if (uiState.boundarySelection >= 0) {
+                if (uiState.boundarySelection < 2) {
                     // Remove boundary faces
                     mesh.removeBoundaryFaces(uiState.boundarySelection);
-                } else if (uiState.boundarySelection == 3) {
+                } else if (uiState.boundarySelection == 2) {
                     // Remove non-manifold faces
                     mesh.removeNonManifoldFaces();
                 }
-                // Convert int to bool array for renderer
-                bool boundarySelectionArray[4] = {false, false, false, false};
-                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
-                    boundarySelectionArray[uiState.boundarySelection] = true;
-                }
-                meshRenderer.upload(mesh, boundarySelectionArray);
+                meshRenderer.upload(mesh, uiState.boundarySelection);
             }
             
         }
@@ -201,14 +167,7 @@ int main()
         // Handle selection change
         if (uiState.selectionChanged) {
             uiState.selectionChanged = false;
-            if (!objPaths.empty()) {
-                // Convert int to bool array for renderer
-                bool boundarySelectionArray[4] = {false, false, false, false};
-                if (uiState.boundarySelection >= 0 && uiState.boundarySelection < 4) {
-                    boundarySelectionArray[uiState.boundarySelection] = true;
-                }
-                meshRenderer.upload(mesh, boundarySelectionArray);
-            }
+            meshRenderer.upload(mesh, uiState.boundarySelection);
         }
         
 
@@ -231,38 +190,12 @@ int main()
         glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(cameraPos));
         
-        // Object color and boundary highlight color
-        glm::vec3 objectColor(0.9f, 0.9f, 0.9f);
-        glm::vec3 boundaryColor(1.0f, 0.9f, 0.2f); // Default: Yellow
-        
-        // Use color based on selected boundary type
-        if (uiState.boundarySelection == 0) {
-            boundaryColor = glm::vec3(1.0f, 0.9f, 0.2f); // Yellow for 1 boundary edge
-        } else if (uiState.boundarySelection == 1) {
-            boundaryColor = glm::vec3(1.0f, 0.3f, 0.3f); // Red for 2 boundary edges
-        } else if (uiState.boundarySelection == 2) {
-            boundaryColor = glm::vec3(1.0f, 0.5f, 0.0f); // Orange for 3 boundary edges
-        } else if (uiState.boundarySelection == 3) {
-            boundaryColor = glm::vec3(0.0f, 1.0f, 0.0f); // Green for non-manifold faces
-        } else if (uiState.boundarySelection == 3) {
-            boundaryColor = glm::vec3(0.0f, 1.0f, 0.0f); // Green for non-manifold faces
-        }
-        glUniform3fv(objectColorLoc, 1, glm::value_ptr(objectColor));
-        glUniform3fv(boundaryColorLoc, 1, glm::value_ptr(boundaryColor));
-        
         // Alpha value for transparency
         float alpha = uiState.transparentFace ? 0.5f : 1.0f;
         glUniform1f(alphaLoc, alpha);
 
-        // Draw combined mesh (with component highlighting)
-        if (!objPaths.empty()) {
-            meshRenderer.draw();
-        } else {
-            // Fallback to individual meshes if no combined mesh
-            for (const auto& renderer : renderers) {
-                renderer.draw();
-            }
-        }
+        // Draw mesh
+        meshRenderer.draw();
 
         // Render UI
         renderUI(uiState);
@@ -273,7 +206,6 @@ int main()
 
     // Cleanup
     shutdownUI();
-    renderers.clear();  // MeshRenderer destructor handles VAO/VBO cleanup
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();

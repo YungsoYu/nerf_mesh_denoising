@@ -4,14 +4,6 @@
 #include <glad/glad.h>
 #include "mesh.h"
 
-// Face color types for rendering (as float values for shader)
-namespace FaceColor {
-    constexpr float NORMAL = 0.0f;           // Normal face (gray)
-    constexpr float BOUNDARY = 1.0f;         // Boundary face (yellow/red/orange)
-    constexpr float GREEN_COMPONENT = 2.0f;  // Largest component (green)
-    constexpr float BLUE_COMPONENT = 3.0f;   // 2nd largest component (blue)
-}
-
 // OpenGL renderer for Mesh (handles VBO/VAO management)
 class MeshRenderer {
 public:
@@ -27,8 +19,8 @@ public:
     MeshRenderer& operator=(MeshRenderer&& other) noexcept;
     
     // Upload mesh data to GPU
-    // highlightSelection: [0]=1 boundary edge, [1]=2 boundary edges, [2]=3 boundary edges, [3]=non-manifold faces
-    void upload(const Mesh& mesh, const bool highlightSelection[4]);
+    // boundarySelection: -1=none, 0=1 boundary edge, 1=2 boundary edges, 2=3 boundary edges, 3=non-manifold faces
+    void upload(const Mesh& mesh, int boundarySelection);
     
     // Draw the mesh
     void draw() const;
@@ -42,7 +34,7 @@ private:
     int vertexCount_ = 0;
     
     // Build interleaved vertex data for GPU
-    std::vector<float> buildGLVertices(const Mesh& mesh, const bool highlightSelection[4]) const;
+    std::vector<float> buildGLVertices(const Mesh& mesh, int boundarySelection) const;
 };
 
 #endif

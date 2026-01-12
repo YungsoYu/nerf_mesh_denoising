@@ -4,7 +4,7 @@
 #include <GLFW/glfw3.h>
 
 struct UIState {
-    // Face selection: -1 = none, 0 = 1 boundary edge, 1 = 2 boundary edges, 2 = 3 boundary edges, 3 = non-manifold faces to remove
+    // Face selection: -1 = none, 0 = 1 boundary edge, 1 = 2 boundary edges, 2 = non-manifold faces to remove
     int boundarySelection = -1;
     
     // Transparent face rendering

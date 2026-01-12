@@ -51,12 +51,9 @@ void renderUI(UIState& state)
         if (ImGui::RadioButton("2 Boundary Edges", &state.boundarySelection, 1)) {
             state.selectionChanged = true;
         }
-        if (ImGui::RadioButton("3 Boundary Edges", &state.boundarySelection, 2)) {
-            state.selectionChanged = true;
-        }
         // Set text wrap position for long labels
         ImGui::PushTextWrapPos(ImGui::GetContentRegionMax().x);
-        if (ImGui::RadioButton("Non-manifold faces to remove", &state.boundarySelection, 3)) {
+        if (ImGui::RadioButton("Non-manifold faces to remove", &state.boundarySelection, 2)) {
             state.selectionChanged = true;
         }
         ImGui::PopTextWrapPos();

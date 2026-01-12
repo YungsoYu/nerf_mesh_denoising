@@ -1,6 +1,7 @@
 #include "mesh_renderer.h"
 #include <unordered_set>
 #include <algorithm>
+#include <iostream>
 
 MeshRenderer::~MeshRenderer() {
     cleanup();
@@ -42,8 +43,8 @@ void MeshRenderer::cleanup() {
     vertexCount_ = 0;
 }
 
-void MeshRenderer::upload(const Mesh& mesh, const bool highlightSelection[4]) {
-    std::vector<float> glVertices = buildGLVertices(mesh, highlightSelection);
+void MeshRenderer::upload(const Mesh& mesh, int boundarySelection) {
+    std::vector<float> glVertices = buildGLVertices(mesh, boundarySelection);
     vertexCount_ = static_cast<int>(glVertices.size() / 7);
     
     // Create VAO/VBO if needed
@@ -80,55 +81,18 @@ void MeshRenderer::draw() const {
     glDrawArrays(GL_TRIANGLES, 0, vertexCount_);
 }
 
-std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, const bool highlightSelection[4]) const {
-    // Build set of boundary faces (union of all selected types)
-    std::unordered_set<int> boundaryFaces;
-    for (int i = 0; i < 3; ++i) {
-        if (highlightSelection[i]) {
-            const auto& faces = mesh.boundaryFaces(i);
-            boundaryFaces.insert(faces.begin(), faces.end());
-        }
-    }
-    std::unordered_set<int> greenFaces;
-    if (highlightSelection[3]) {
-        greenFaces.insert(mesh.nonManifoldToRemove.begin(), mesh.nonManifoldToRemove.end());
-    }
-    
-    
-    // Build set of faces to render (only valid faces)
-    std::unordered_set<int> facesToRender;
-
+std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, int boundarySelection) const {
     size_t numTriangles = mesh.faceCount();
-    for (size_t t = 0; t < numTriangles; ++t) {
-        facesToRender.insert(t);  // 모든 face 추가
-    }
-
-    std::unordered_set<int> blueFaces;    // 2nd largest component
-
     std::vector<float> glVertices;
-    
-    glVertices.reserve(facesToRender.size() * 3 * 7);
+    glVertices.reserve(numTriangles * 3 * 7);
     
     const auto& vertices = mesh.vertices();
     const auto& indices = mesh.indices();
     const auto& faceNormals = mesh.faceNormals();
+    const auto& faceColors = mesh.faceColors();
     
     for (size_t t = 0; t < numTriangles; ++t) {
-        if (facesToRender.count(t) == 0) {
-            continue; 
-        }
-        
-        glm::vec3 normal = faceNormals[t];
-        float faceColor;
-        if (greenFaces.count(t)) {
-            faceColor = FaceColor::GREEN_COMPONENT;
-        } else if (blueFaces.count(t)) {
-            faceColor = FaceColor::BLUE_COMPONENT;
-        } else if (boundaryFaces.count(t)) {
-            faceColor = FaceColor::BOUNDARY;
-        } else {
-            faceColor = FaceColor::NORMAL;
-        }
+        glm::vec3 normal = faceNormals[t];;
         
         for (int v = 0; v < 3; ++v) {
             int idx = indices[t * 3 + v];
@@ -140,7 +104,11 @@ std::vector<float> MeshRenderer::buildGLVertices(const Mesh& mesh, const bool hi
             glVertices.push_back(normal.x);
             glVertices.push_back(normal.y);
             glVertices.push_back(normal.z);
-            glVertices.push_back(faceColor);
+            if (boundarySelection == faceColors[t]-1) {
+                glVertices.push_back(faceColors[t]);
+            } else {
+                glVertices.push_back(0.0f);
+            }
         }
     }
     

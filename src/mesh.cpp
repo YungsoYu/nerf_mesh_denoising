@@ -1,4 +1,5 @@
-#include "mesh.h"
+#include "../include/mesh.h"
+#include <glm/glm.hpp>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -31,88 +32,6 @@ void Mesh::loadFromOBJ(const std::string& path) {
         return;
     }
     
-    // Store current vertex count to offset indices
-    int vertexOffset = static_cast<int>(vertices_.size());
-    
-    // vertex position - index pair (local to this file)
-    std::unordered_map<glm::vec3, int, Vec3Hash, Vec3Equal> verticesMap;
-    
-    // index mapping from old (duplicated vertices in original file) to new (unique vertices in verticesMap)
-    std::vector<int> oldToNewIndex;
-    
-    int rawVertexCount = 0;
-    std::string line;
-    
-    while (std::getline(file, line)) {
-        if (line.substr(0, 2) == "v ") {
-            // Parse vertex position
-            std::istringstream iss(line.substr(2));
-            float x, y, z;
-            iss >> x >> y >> z;
-            glm::vec3 pos(x, y, z);
-            
-            // Check if this position already exists in local map
-            auto it = verticesMap.find(pos);
-            if (it == verticesMap.end()) {
-                // New unique vertex - add to mesh
-                int newIdx = static_cast<int>(vertices_.size());
-                verticesMap[pos] = newIdx;
-                vertices_.push_back(pos);
-                oldToNewIndex.push_back(newIdx);
-            } else {
-                // Duplicate in this file
-                oldToNewIndex.push_back(it->second);
-            }
-            rawVertexCount++;
-        } 
-        else if (line.substr(0, 2) == "f ") {
-            // Parse triangle face
-            std::istringstream iss(line.substr(2));
-            std::string token;
-            int indices[3];
-            
-            for (int i = 0; i < 3 && iss >> token; ++i) {
-                size_t pos = token.find('/');
-                if (pos != std::string::npos) {
-                    token = token.substr(0, pos);
-                }
-                int objIdx = std::stoi(token) - 1;
-                indices[i] = oldToNewIndex[objIdx];
-            }
-            
-            indices_.push_back(indices[0]);
-            indices_.push_back(indices[1]);
-            indices_.push_back(indices[2]);
-            
-            // Compute face normal
-            glm::vec3 v0 = vertices_[indices[0]];
-            glm::vec3 v1 = vertices_[indices[1]];
-            glm::vec3 v2 = vertices_[indices[2]];
-            glm::vec3 edge1 = v1 - v0;
-            glm::vec3 edge2 = v2 - v0;
-            glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
-            
-            faceNormals_.push_back(normal);
-        }
-    }
-    
-    size_t trianglesBefore = faceNormals_.size();
-    size_t trianglesAfter = indices_.size() / 3;
-    size_t trianglesAdded = trianglesAfter - trianglesBefore;
-    
-    std::cout << "Appended OBJ file:\n"
-              << "  Vertices including duplicates: " << rawVertexCount << "\n"
-              << "  Vertices excluding duplicates (in this file): " << verticesMap.size() << "\n"
-              << "  Triangles added: " << trianglesAdded << std::endl;
-}
-
-void Mesh::loadFromOBJ2(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open: " << path << std::endl;
-        return;
-    }
-    
     // Build global verticesMap from existing vertices_ (across all previously loaded files)
     std::unordered_map<glm::vec3, int, Vec3Hash, Vec3Equal> verticesMap;
     for (size_t i = 0; i < vertices_.size(); ++i) {
@@ -122,6 +41,7 @@ void Mesh::loadFromOBJ2(const std::string& path) {
     // index mapping from old (duplicated vertices in original file) to new (unique vertices in global verticesMap)
     std::vector<int> oldToNewIndex;
     
+    size_t trianglesBefore = indices_.size() / 3;
     int rawVertexCount = 0;
     int newVerticesAdded = 0;
     std::string line;
@@ -177,10 +97,10 @@ void Mesh::loadFromOBJ2(const std::string& path) {
             glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
             
             faceNormals_.push_back(normal);
+            faceColors_.push_back(0.0f);
         }
     }
-    
-    size_t trianglesBefore = faceNormals_.size();
+
     size_t trianglesAfter = indices_.size() / 3;
     size_t trianglesAdded = trianglesAfter - trianglesBefore;
     
@@ -217,7 +137,7 @@ Mesh Mesh::createMesh(const std::string& meshDir) {
 
     // Load all OBJ files and append them to the mesh
     for (const auto& objPath : objPaths) {
-        mesh.loadFromOBJ2(objPath);
+        mesh.loadFromOBJ(objPath);
     }
 
     
@@ -243,8 +163,8 @@ void Mesh::buildEdgeFaceAdjacency() {
 void Mesh::analyzeMesh() const {
     int boundaryEdges = 0;
     int manifoldEdges = 0;
-    nonManifoldWith3Faces_ = 0;
-    nonManifoldWith4Faces_ = 0;
+    numEdgesWith3Faces_ = 0;
+    numEdgesWith4Faces_ = 0;
     int nonManifoldEdges = 0;
 
     for (const auto& [edge, faceList] : edgeToFaces_) {
@@ -255,9 +175,9 @@ void Mesh::analyzeMesh() const {
         } else if (count == 2) {
             manifoldEdges++;
         } else if (count == 3) {
-            nonManifoldWith3Faces_++;
+            numEdgesWith3Faces_++;
         } else if (count == 4) {
-            nonManifoldWith4Faces_++;
+            numEdgesWith4Faces_++;
         } else {
             nonManifoldEdges++;
         }
@@ -268,165 +188,128 @@ void Mesh::analyzeMesh() const {
               << "  Total edges: " << edgeToFaces_.size() << "\n"
               << "  Boundary edges (1 face): " << boundaryEdges << "\n"
               << "  Manifold edges (2 faces): " << manifoldEdges << "\n"
-              << "  Non-manifold edges (3 faces): " << nonManifoldWith3Faces_ << "\n"
-              << "  Non-manifold edges (4 faces): " << nonManifoldWith4Faces_ << "\n"
+              << "  Non-manifold edges (3 faces): " << numEdgesWith3Faces_ << "\n"
+              << "  Non-manifold edges (4 faces): " << numEdgesWith4Faces_ << "\n"
               << "  Non-manifold edges (5+ faces): " << nonManifoldEdges << std::endl;
 }
 
-void Mesh::findBoundaryFaces() {
-    for (auto& vec : boundaryFaces_) {
-        vec.clear();
-    }
-
-    int oneBoundaryFace = 0;
-    int caseCount = 0;
-    
+void Mesh::buildFaceStatus() {
+    std::cout << "◦ Building Face Statues" << std::endl;
     int numTriangles = indices_.size() / 3;
+    
     for (int faceIdx = 0; faceIdx < numTriangles; faceIdx++) {
-        int numBoundaryEdges = 0;
-        int nonManifoldEdge = 0;
-        
-        // 각 edge의 상태를 저장 (0: boundary, 1: manifold, 2: non-manifold)
-        std::array<int, 3> edgeStates;
+        int boundaryCount = 0;
+        int manifoldCount = 0;
+        int nonManifoldCount = 0;
         
         for (int i = 0; i < 3; i++) {
             int v0 = indices_[faceIdx * 3 + i];
             int v1 = indices_[faceIdx * 3 + (i + 1) % 3];
             Edge edge = makeEdge(v0, v1);
             
-            // edge가 존재하는지 확인
             auto it = edgeToFaces_.find(edge);
             if (it == edgeToFaces_.end()) {
-                continue;  // edge가 없으면 스킵
+                std::cout << "!! Warning: edge not found in edgeToFaces_ map" << std::endl;
+                continue;
             }
             
             int edgeFaceCount = it->second.size();
             
             if (edgeFaceCount == 1) {
-                numBoundaryEdges++;
-                edgeStates[i] = 0;  // boundary
-            } else if (edgeFaceCount > 2) {
-                nonManifoldEdge++;
-                edgeStates[i] = 2;  // non-manifold
+                boundaryCount++;
+            } else if (edgeFaceCount == 2) {
+                manifoldCount++;
             } else {
-                edgeStates[i] = 1;  // manifold
+                nonManifoldCount++;
             }
         }
+        faceBoundaryCount_[faceIdx] = boundaryCount;
+        faceManifoldCount_[faceIdx] = manifoldCount;
+        faceNonManifoldCount_[faceIdx] = nonManifoldCount;
+    }
+    std::cout << "• Completed Face Statues" << std::endl;
 
-        // boundary edge 1
-        if (numBoundaryEdges == 1) {
-            // 기존 조건: nonManifoldEdge == 2
-            // 추가 조건: 나머지 두 edge를 개별적으로 확인
-            bool shouldAdd = false;
-            oneBoundaryFace++;
-            if (nonManifoldEdge == 2) {
-                shouldAdd = true;
-            } else if (nonManifoldEdge == 1) { // 한쪽은 non manifold, 다른 한쪽은 이웃 페이스가 boundary face, 한쪽은 현재 non mannifold
-                // 이웃 face 두 개의 index 가져오기
-                std::unordered_set<int> neighborFaces;
-                
-                // manifold edge 1개 찾기
-                for (int i = 0; i < 3; i++) {
-                    if (edgeStates[i] == 1) {  // manifold edge
-                        int v0 = indices_[faceIdx * 3 + i];
-                        int v1 = indices_[faceIdx * 3 + (i + 1) % 3];
-                        Edge edge = makeEdge(v0, v1);
-                        
-                        // 이 edge를 공유하는 모든 face들 가져오기 (1개만 있어야함)
-                        const auto& facesOnEdge = edgeToFaces_.at(edge);
-                        for (int neighborFaceIdx : facesOnEdge) {
-                            if (neighborFaceIdx != faceIdx) {  // 현재 face 제외
-                                neighborFaces.insert(neighborFaceIdx);
-                            }
-                        }
+}
+
+void Mesh::findBoundaryFaces() {
+    int numTriangles = indices_.size() / 3;
+    
+    // Lambda function to get neighbor faces through manifold edges
+    auto getNeighborFaces = [this](int faceIdx) -> std::vector<int> {
+        std::vector<int> neighborFaces;
+        
+        // manifold edge 찾기
+        for (int i = 0; i < 3; i++) {
+            int v0 = indices_[faceIdx * 3 + i];
+            int v1 = indices_[faceIdx * 3 + (i + 1) % 3];
+            Edge edge = makeEdge(v0, v1);
+            auto it = edgeToFaces_.find(edge);
+            if (it == edgeToFaces_.end()) {
+                continue;  // Edge가 맵에 없는 경우
+            }
+            int edgeFaceCount = it->second.size();
+            if (edgeFaceCount == 2) { // manifold edge
+                // 이 edge를 공유하는 모든 face들 가져오기 (1개만 있어야함)
+                const auto& facesOnEdge = it->second;
+                for (int neighborFaceIdx : facesOnEdge) {
+                    if (neighborFaceIdx != faceIdx) {  // 현재 face 제외
+                        neighborFaces.push_back(neighborFaceIdx);
                     }
                 }
-                
-                // 이웃 face 두 개의 index
-                std::vector<int> neighborFaceIndices(neighborFaces.begin(), neighborFaces.end());
+            }
+        }
+        
+        return neighborFaces;
+    };
+    for (int faceIdx = 0; faceIdx < numTriangles; faceIdx++) {
+
+        if (faceBoundaryCount_[faceIdx] == 1) { // Face with 1 boundary edge
+            // 기존 조건: boundary edge == 1 && non-mainfold edge == 2 -> remove
+            // 추가 조건: 나머지 두 edge에 연결된 neighbor face 확인
+            bool shouldAdd = false;
+
+            if (faceManifoldCount_[faceIdx] == 0) {// if (nonManifoldEdge == 2) {
+                shouldAdd = true;
+            } else if (faceManifoldCount_[faceIdx] == 1) { 
+                std::vector<int> neighborFaces = getNeighborFaces(faceIdx);
                 
                 // 이웃 face들의 edge 확인
                 int boundaryInNeighbors = 0;
                 int nonManifoldInNeighbors = 0;
                 
-                for (int neighborFaceIdx : neighborFaceIndices) {
-                    // 이웃 face의 세 edge 확인
-                    for (int i = 0; i < 3; i++) {
-                        int v0 = indices_[neighborFaceIdx * 3 + i];
-                        int v1 = indices_[neighborFaceIdx * 3 + (i + 1) % 3];
-                        Edge edge = makeEdge(v0, v1);
-                        
-                        // edge가 존재하는지 확인
-                        auto it = edgeToFaces_.find(edge);
-                        if (it != edgeToFaces_.end()) {
-                            int edgeFaceCount = it->second.size();
-                            if (edgeFaceCount == 1) {
-                                boundaryInNeighbors++;
-                            } else if (edgeFaceCount > 2) {
-                                nonManifoldInNeighbors++;
-                            }
-                        }
+                for (int neighborIdx : neighborFaces) {
+                    if (neighborIdx >= 0 && neighborIdx < static_cast<int>(faceBoundaryCount_.size()) && 
+                        faceBoundaryCount_[neighborIdx] > 0) {
+                        boundaryInNeighbors++;
                     }
                 }
                 
                 if (boundaryInNeighbors > 0) {
                     shouldAdd = true;
-                    caseCount++;
                 }
+            } else if (faceManifoldCount_[faceIdx] == 2) {
+
             }
             
             if (shouldAdd) {
-                boundaryFaces_[0].push_back(faceIdx);
+                faceColors_[faceIdx] = 1;
             }
-        } else if (numBoundaryEdges == 2) {
+
+        } else if (faceBoundaryCount_[faceIdx] == 2) {
             bool shouldAdd = false;
-            if (nonManifoldEdge == 1) {
+            if (faceManifoldCount_[faceIdx] == 1) {
                 shouldAdd = true;
             } else {
-            // 이웃 face 두 개의 index 가져오기
-                std::unordered_set<int> neighborFaces;
-                    
-                // manifold edge 1개 찾기
-                for (int i = 0; i < 3; i++) {
-                    if (edgeStates[i] == 1) {  // manifold edge
-                        int v0 = indices_[faceIdx * 3 + i];
-                        int v1 = indices_[faceIdx * 3 + (i + 1) % 3];
-                        Edge edge = makeEdge(v0, v1);
-                        
-                        // 이 edge를 공유하는 모든 face들 가져오기 (1개만 있어야함)
-                        const auto& facesOnEdge = edgeToFaces_.at(edge);
-                        for (int neighborFaceIdx : facesOnEdge) {
-                            if (neighborFaceIdx != faceIdx) {  // 현재 face 제외
-                                neighborFaces.insert(neighborFaceIdx);
-                            }
-                        }
-                    }
-                }
-                
-                // 이웃 face 두 개의 index
-                std::vector<int> neighborFaceIndices(neighborFaces.begin(), neighborFaces.end());
+                std::vector<int> neighborFaces = getNeighborFaces(faceIdx);
                 
                 // 이웃 face들의 edge 확인
                 int boundaryInNeighbors = 0;
                 int nonManifoldInNeighbors = 0;
                 
-                for (int neighborFaceIdx : neighborFaceIndices) {
-                    // 이웃 face의 세 edge 확인
-                    for (int i = 0; i < 3; i++) {
-                        int v0 = indices_[neighborFaceIdx * 3 + i];
-                        int v1 = indices_[neighborFaceIdx * 3 + (i + 1) % 3];
-                        Edge edge = makeEdge(v0, v1);
-                        
-                        // edge가 존재하는지 확인
-                        auto it = edgeToFaces_.find(edge);
-                        if (it != edgeToFaces_.end()) {
-                            int edgeFaceCount = it->second.size();
-                            if (edgeFaceCount == 1) {
-                                boundaryInNeighbors++;
-                            } else if (edgeFaceCount > 2) {
-                                nonManifoldInNeighbors++;
-                            }
-                        }
+                for (int neighborIdx : neighborFaces) {
+                    if (neighborIdx >= 0 && neighborIdx < static_cast<int>(faceBoundaryCount_.size()) && 
+                        faceBoundaryCount_[neighborIdx] > 0) {
+                        boundaryInNeighbors++;
                     }
                 }
                 
@@ -436,32 +319,22 @@ void Mesh::findBoundaryFaces() {
             }
             
             if (shouldAdd) {
-                boundaryFaces_[1].push_back(faceIdx);
+                faceColors_[faceIdx] = 2;
             }
             // todo: adjacent face가 boundary edge를 두개 가진 경우 삭제
-        } else if (numBoundaryEdges == 3) {
-            boundaryFaces_[2].push_back(faceIdx);
-        }
+        } 
     }
     
-    std::cout << "Boundary faces:\n"
-              << "  1 boundary edge: " << boundaryFaces_[0].size() << "\n"
-              << "  2 boundary edges: " << boundaryFaces_[1].size() << "\n"
-              << "  3 boundary edges: " << boundaryFaces_[2].size() << "\n"
-              << "  one boundary faces: " << oneBoundaryFace << "\n"
-              << "  cases counnt " << caseCount 
-              << std::endl;
+    // todo: print
+
 }
 
 void Mesh::buildValence() {
-    // Initialize valence vector with zeros
     vertexValences_.clear();
     vertexValences_.resize(vertices_.size(), 0);
     
-    // For each vertex, collect all neighboring vertices using a set
     std::vector<std::unordered_set<int>> neighbors(vertices_.size());
     
-    // Iterate through all faces
     size_t numTriangles = indices_.size() / 3;
     for (size_t faceIdx = 0; faceIdx < numTriangles; ++faceIdx) {
         size_t idxBase = faceIdx * 3;
@@ -494,7 +367,6 @@ void Mesh::buildValence() {
         vertexValences_[i] = static_cast<int>(neighbors[i].size());
     }
     
-    // Optional: print statistics
     if (!vertexValences_.empty()) {
         int minValence = *std::min_element(vertexValences_.begin(), vertexValences_.end());
         int maxValence = *std::max_element(vertexValences_.begin(), vertexValences_.end());
@@ -513,17 +385,13 @@ void Mesh::buildValence() {
 }
 
 void Mesh::findNonManifoldFacesToRemove() { // 3-manifold (valance)
-    // 임시로 remove target faces 담을 벡터
-    nonManifoldToRemove.clear();
 
-    std::vector<int> facesToRemove;
     // 빠른 조회를 위한 set
     std::unordered_set<int> facesToRemoveSet;
 
     int skippedCount = 0;
     int manifoldCount = 0;
 
-    // edge를 순회
     for (const auto& [edge, faceList] : edgeToFaces_) {
         // Manifold edge만 처리 (정확히 2개의 face를 가진 edge)
         if (faceList.size() < 3) {
@@ -645,17 +513,15 @@ void Mesh::findNonManifoldFacesToRemove() { // 3-manifold (valance)
         //     continue;
         // }
 
-        nonManifoldToRemove.insert(faceToRemove);
-        facesToRemove.push_back(faceToRemove);
+        faceColors_[faceToRemove] = 3;
         facesToRemoveSet.insert(faceToRemove);
 
     }
 
-    // removeFaces(facesToRemove);
     std::cout << "Skipped count (no min): " << skippedCount << std::endl;
 
     std::cout << "Skipped count (mainfold): " << manifoldCount << std::endl;
-    std::cout << "Removed faces: " << nonManifoldToRemove.size() << std::endl;
+    // std::cout << "Removed faces: " << nonManifoldToRemove.size() << std::endl;
 }
 
 
@@ -757,7 +623,6 @@ void Mesh::removeFaces(const std::vector<int>& facesToRemoveVec) {
         return;
     }
     
-    // Build set for fast lookup
     std::unordered_set<int> facesToRemove(facesToRemoveVec.begin(), facesToRemoveVec.end());
     
     // Filter faces - skip those in the removal set
@@ -781,16 +646,42 @@ void Mesh::removeFaces(const std::vector<int>& facesToRemoveVec) {
     faceNormals_ = std::move(newNormals);
     
 
+    // faceColors_도 함께 업데이트 (삭제된 face 제거)
+    std::vector<float> newFaceColors;
+    for (int faceIdx = 0; faceIdx < numTriangles; faceIdx++) {
+        if (facesToRemove.count(faceIdx) == 0) {
+            newFaceColors.push_back(faceColors_[faceIdx]);
+        }
+    }
+    faceColors_ = std::move(newFaceColors);
+
     buildEdgeFaceAdjacency();
     std::vector<std::vector<int>> components = getComponents(); 
+    
     if (components.size() > 1) {
         removeRestComponents(components);
     } else {
+        resetFaceData();
         analyzeMesh();
+        buildFaceStatus();
         findBoundaryFaces();
         buildValence();
         findNonManifoldFacesToRemove();
     }
+}
+
+void Mesh::resetFaceData() {
+    size_t numTriangles = faceCount();
+    
+    faceBoundaryCount_.clear();
+    faceManifoldCount_.clear();
+    faceNonManifoldCount_.clear();
+    faceColors_.clear();
+
+    faceBoundaryCount_.resize(numTriangles, 0);
+    faceManifoldCount_.resize(numTriangles, 0);
+    faceNonManifoldCount_.resize(numTriangles, 0);
+    faceColors_.resize(numTriangles, 0.0f);
 }
 
 void Mesh::removeBoundaryFaces(int boundarySelection) {
@@ -798,20 +689,35 @@ void Mesh::removeBoundaryFaces(int boundarySelection) {
         return;
     }
     
-    const std::vector<int>& facesToRemoveVec = boundaryFaces_[boundarySelection];
-    removeFaces(facesToRemoveVec);
+    // faceColors[i] == boundarySelection+1에 해당하는 face index들 수집
+    std::vector<int> facesToRemove;
+    for (size_t i = 0; i < faceCount(); ++i) {
+        if (static_cast<int>(faceColors_[i]) == boundarySelection + 1) {
+            facesToRemove.push_back(static_cast<int>(i));
+        }
+    }
+    
+    removeFaces(facesToRemove);
     std::cout << " (boundary selection: " << boundarySelection << ")" << std::endl;
 }
 
 void Mesh::removeNonManifoldFaces() {
     std::cout << "◦ Processing: removing non-manifold faces ..." << std::endl;
-    if (nonManifoldWith4Faces_ >= 0 && nonManifoldWith3Faces_ > 10000) {
-        if (nonManifoldToRemove.empty()) {
+
+    std::vector<int> facesToRemove;
+    for (size_t i = 0; i < faceCount(); ++i) {
+        if (static_cast<int>(faceColors_[i]) == 3) {
+            facesToRemove.push_back(static_cast<int>(i));
+        }
+    }
+    
+    if (numEdgesWith4Faces_ >= 0 && numEdgesWith3Faces_ > 10000) {
+        
+        if (facesToRemove.empty()) {
             std::cout << "• Failed: no non-manifold faces to remove" << std::endl;
         } else {
-            std::vector<int> facesToRemoveVec(nonManifoldToRemove.begin(), nonManifoldToRemove.end());
-            removeFaces(facesToRemoveVec);
-            std::cout << "• Completed: non-manifold faces removed: " << facesToRemoveVec.size() << " faces" << std::endl;
+            removeFaces(facesToRemove);
+            std::cout << "• Completed: non-manifold faces removed: " << facesToRemove.size() << " faces" << std::endl;
         }
     } else {
         std::cout << "• Failed: Too small non-manifold faces to remove " << std::endl;

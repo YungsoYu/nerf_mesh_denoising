@@ -1,4 +1,4 @@
 build/
 dependencies/
 Makefile/
-README.md
+**/imgui.ini
