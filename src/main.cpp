@@ -80,8 +80,8 @@ int main()
     UIState uiState;
 
     // Shader
-    std::string vertexShaderSource = loadShaderFile("shader.vert");
-    std::string fragmentShaderSource = loadShaderFile("shader.frag");
+    std::string vertexShaderSource = loadShaderFile("glsl/shader.vert");
+    std::string fragmentShaderSource = loadShaderFile("glsl/shader.frag");
     
     const char* vertexShaderCode = vertexShaderSource.c_str();
     const char* fragmentShaderCode = fragmentShaderSource.c_str();
